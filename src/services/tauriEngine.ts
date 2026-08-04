@@ -70,6 +70,14 @@ export interface PlayoutConfig {
   rtmpTarget: string;
   loopForever: boolean;
   repeatCount: number;
+  ffmpegPath?: string;
+}
+
+export interface FFmpegInfo {
+  available: boolean;
+  path: string;
+  version: string;
+  source: 'bundled' | 'custom' | 'system' | 'missing';
 }
 
 export interface PlayoutStats {
@@ -118,6 +126,7 @@ export interface TauriStreamParams {
   streamId: string;
   args: string[];
   playlistContent: string; // Needed for Fast Mode to write playlist.txt
+  ffmpegPath?: string;
 }
 
 /**
@@ -130,6 +139,7 @@ export const startTauriFFmpegStream = async (params: TauriStreamParams): Promise
         streamId: params.streamId,
         args: params.args || [], // New signature
         playlistContent: params.playlistContent,
+        ffmpegPath: params.ffmpegPath || null,
       });
       console.log('[Tauri FFmpeg] Start result:', result);
       return { success: true, message: result };
@@ -163,6 +173,61 @@ export const checkFFmpegAvailable = async (): Promise<boolean> => {
     return false;
   }
   return false;
+};
+
+export const getFFmpegInfo = async (customPath?: string): Promise<FFmpegInfo | null> => {
+  try {
+    if (isTauriEnvironment()) {
+      return await invoke<FFmpegInfo>('get_ffmpeg_info', { customPath: customPath || null });
+    }
+  } catch (e) {
+    console.warn('[Tauri FFmpeg] get_ffmpeg_info error:', e);
+  }
+  return null;
+};
+
+export const selectCustomFFmpegBinary = async (): Promise<string | null> => {
+  try {
+    if (isTauriEnvironment()) {
+      return await invoke<string | null>('select_custom_ffmpeg_binary');
+    }
+  } catch (e) {
+    console.warn('[Tauri FFmpeg] select custom binary error:', e);
+  }
+  return null;
+};
+
+export const saveProfileStreamKey = async (profileId: string, streamKey: string): Promise<boolean> => {
+  try {
+    if (isTauriEnvironment()) {
+      await invoke('save_profile_stream_key', { profileId, streamKey });
+      return true;
+    }
+  } catch (e) {
+    console.warn('[Tauri Keychain] save profile stream key error:', e);
+  }
+  return false;
+};
+
+export const getProfileStreamKey = async (profileId: string): Promise<string | null> => {
+  try {
+    if (isTauriEnvironment()) {
+      return await invoke<string | null>('get_profile_stream_key', { profileId });
+    }
+  } catch (e) {
+    console.warn('[Tauri Keychain] get profile stream key error:', e);
+  }
+  return null;
+};
+
+export const deleteProfileStreamKey = async (profileId: string): Promise<void> => {
+  try {
+    if (isTauriEnvironment()) {
+      await invoke('delete_profile_stream_key', { profileId });
+    }
+  } catch (e) {
+    console.warn('[Tauri Keychain] delete profile stream key error:', e);
+  }
 };
 
 export const getProcessTelemetry = async (streamId: string): Promise<{ cpu: number; memory_mb: number } | null> => {

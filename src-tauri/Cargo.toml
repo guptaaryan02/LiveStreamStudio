@@ -1,9 +1,10 @@
 [package]
-name = "app"
+name = "livestream-studio"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
+description = "Tauri desktop studio for reliable multi-destination 24/7 livestream playout."
+authors = ["LiveStream Studio"]
+license = "LicenseRef-Proprietary"
+publish = false
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"
@@ -25,3 +26,4 @@ tauri = { version = "2.11.3", features = ["protocol-asset"] }
 tauri-plugin-log = "2"
 rfd = "0.15"
 sysinfo = "0.36.1"
+keyring = "3.6.3"

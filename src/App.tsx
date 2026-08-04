@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useStudioStore } from './store/useStudioStore';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
@@ -14,13 +14,36 @@ import { LogsView } from './components/logs/LogsView';
 import { AnalyticsView } from './components/analytics/AnalyticsView';
 import { SettingsView } from './components/settings/SettingsView';
 import { isBrokenVideo } from './services/videoImport';
+import { MarketingSite } from './components/marketing/MarketingSite';
+
+const isTauriDesktop = () => {
+  if (typeof window === 'undefined') return false;
+  return (
+    '__TAURI_INTERNALS__' in window ||
+    '__TAURI__' in window ||
+    '__TAURI_IPC__' in window ||
+    window.navigator.userAgent.includes('Tauri')
+  );
+};
+
+const isStudioRoute = (hash: string) => {
+  return hash.replace('#/', '').startsWith('studio');
+};
 
 export const App: React.FC = () => {
   const { activeTab, tickTelemetry, checkSchedules, addLog, instances } = useStudioStore();
+  const [hashRoute, setHashRoute] = useState(() => (typeof window === 'undefined' ? '' : window.location.hash));
+  const showMarketingSite = !isTauriDesktop() && !isStudioRoute(hashRoute);
 
+  useEffect(() => {
+    const updateRoute = () => setHashRoute(window.location.hash);
+    window.addEventListener('hashchange', updateRoute);
+    return () => window.removeEventListener('hashchange', updateRoute);
+  }, []);
   // Safety net: purge any library/playlist entry without a real disk path.
   // FFmpeg runs outside the webview, so blob: URLs can never be streamed.
   useEffect(() => {
+    if (showMarketingSite) return;
     useStudioStore.setState((state) => {
       const videos = state.videos.filter((v) => !isBrokenVideo(v));
       const playlists = state.playlists.map((p) => ({
@@ -38,10 +61,11 @@ export const App: React.FC = () => {
       console.warn(`[Cleanup] Removed ${removed} un-streamable video reference(s) with no disk path.`);
       return { videos, playlists };
     });
-  }, []);
+  }, [showMarketingSite]);
 
   // Telemetry loop running every 1 second for active stream telemetry
   useEffect(() => {
+    if (showMarketingSite) return;
     const interval = setInterval(() => {
       tickTelemetry();
       
@@ -50,7 +74,7 @@ export const App: React.FC = () => {
       checkSchedules();
     }, 1000);
     return () => clearInterval(interval);
-  }, [tickTelemetry, checkSchedules]);
+  }, [tickTelemetry, checkSchedules, showMarketingSite]);
 
   // Setup real-time FFmpeg logs.
   // Every listener registered here MUST be torn down on unmount: React StrictMode
@@ -58,6 +82,7 @@ export const App: React.FC = () => {
   // them means one FFmpeg exit fires handleStreamExit N times — which is how a
   // single disconnect turned into a runaway reconnect loop.
   useEffect(() => {
+    if (showMarketingSite) return;
     let disposed = false;
     const unlisteners: Array<() => void> = [];
 
@@ -152,7 +177,7 @@ export const App: React.FC = () => {
       unlisteners.forEach((unlisten) => unlisten());
       unlisteners.length = 0;
     };
-  }, [addLog]);
+  }, [addLog, showMarketingSite]);
 
   const renderActiveTab = () => {
     switch (activeTab) {
@@ -180,6 +205,9 @@ export const App: React.FC = () => {
   };
 
   return (
+    showMarketingSite ? (
+      <MarketingSite />
+    ) : (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-studio-darker text-slate-100 font-sans">
       {/* Top Header */}
       <Header />
@@ -198,6 +226,7 @@ export const App: React.FC = () => {
       {/* Footer Status Bar */}
       <StatusBar />
     </div>
+    )
   );
 };
 

@@ -43,7 +43,7 @@ export const MultiStreamView: React.FC = () => {
   const [rtmpUrl, setRtmpUrl] = useState('rtmp://a.rtmp.youtube.com/live2');
   const [streamKey, setStreamKey] = useState('');
   const [showKey, setShowKey] = useState(false);
-  const [hardwareAcc, setHardwareAcc] = useState<HardwareAcceleration>('VideoToolbox');
+  const [hardwareAcc, setHardwareAcc] = useState<HardwareAcceleration>('Auto');
 
   const defaultRtmpUrls: Record<StreamPlatform, string> = {
     youtube: 'rtmp://a.rtmp.youtube.com/live2',
@@ -316,6 +316,7 @@ export const MultiStreamView: React.FC = () => {
                     onChange={(e) => setHardwareAcc(e.target.value as HardwareAcceleration)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none"
                   >
+                    <option value="Auto">Auto-detect best encoder</option>
                     <option value="VideoToolbox">Apple VideoToolbox</option>
                     <option value="NVENC">NVIDIA NVENC</option>
                     <option value="QuickSync">Intel QuickSync</option>

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { StreamInstance, VideoItem, Playlist } from '../../types';
 import { Play, Pause, Volume2, VolumeX, Maximize2, Radio, Activity, RefreshCw, Download, FileCode, CheckCircle2 } from 'lucide-react';
 import { useStudioStore } from '../../store/useStudioStore';
+import { sanitizeLogMessage } from '../../services/ffmpegEngine';
 
 interface LivePlayerCanvasProps {
   instance: StreamInstance;
@@ -146,7 +147,10 @@ export const LivePlayerCanvas: React.FC<LivePlayerCanvasProps> = ({ instance, pl
         isInfiniteLoop: playlist.isInfiniteLoop,
         firstVideoMetadata: playlist.videos[0]?.metadata
       } : null,
-      recentLogs: state.logs.filter(l => l.streamId === instance.id).slice(0, 500)
+      recentLogs: state.logs
+        .filter(l => l.streamId === instance.id)
+        .slice(0, 500)
+        .map((log) => ({ ...log, message: sanitizeLogMessage(log.message) }))
     };
 
     const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });

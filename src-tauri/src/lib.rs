@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -9,6 +9,8 @@ use std::thread;
 use tauri::{AppHandle, Emitter, Manager, State};
 use serde::{Deserialize, Serialize};
 use sysinfo::{System, Pid};
+
+const KEYCHAIN_SERVICE: &str = "com.livestreamstudio.streamkeys";
 
 pub struct FFmpegState {
     processes: Mutex<HashMap<String, Child>>,
@@ -53,6 +55,62 @@ struct LogPayload {
 pub struct Telemetry {
     cpu: f32,
     memory_mb: u64,
+}
+
+#[derive(Clone)]
+struct BinaryResolution {
+    path: String,
+    source: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FFmpegInfo {
+    available: bool,
+    path: String,
+    version: String,
+    source: String,
+}
+
+fn profile_key_entry(profile_id: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, profile_id)
+        .map_err(|e| format!("Could not open secure credential store: {}", e))
+}
+
+#[tauri::command]
+fn save_profile_stream_key(profile_id: String, stream_key: String) -> Result<(), String> {
+    if profile_id.trim().is_empty() {
+        return Err("Profile id is required".to_string());
+    }
+    if stream_key.trim().is_empty() {
+        return Err("Stream key is required".to_string());
+    }
+    profile_key_entry(&profile_id)?
+        .set_password(stream_key.trim())
+        .map_err(|e| format!("Could not save stream key securely: {}", e))
+}
+
+#[tauri::command]
+fn get_profile_stream_key(profile_id: String) -> Result<Option<String>, String> {
+    if profile_id.trim().is_empty() {
+        return Ok(None);
+    }
+    match profile_key_entry(&profile_id)?.get_password() {
+        Ok(password) => Ok(Some(password)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(format!("Could not read stream key securely: {}", e)),
+    }
+}
+
+#[tauri::command]
+fn delete_profile_stream_key(profile_id: String) -> Result<(), String> {
+    if profile_id.trim().is_empty() {
+        return Ok(());
+    }
+    match profile_key_entry(&profile_id)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(format!("Could not delete stream key securely: {}", e)),
+    }
 }
 
 #[tauri::command]
@@ -132,6 +190,7 @@ fn start_ffmpeg_stream(
     stream_id: String,
     args: Vec<String>,
     playlist_content: String,
+    ffmpeg_path: Option<String>,
 ) -> Result<String, String> {
     let app_dir = std::env::temp_dir().join(format!("livestream_studio_{}", stream_id));
     std::fs::create_dir_all(&app_dir).unwrap();
@@ -152,7 +211,8 @@ fn start_ffmpeg_stream(
         }
     }).collect();
 
-    let mut child = Command::new(get_ffmpeg_path())
+    let ffmpeg = resolve_ffmpeg(&app, ffmpeg_path.as_deref());
+    let mut child = Command::new(&ffmpeg.path)
         .args(&final_args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -205,39 +265,174 @@ fn stop_ffmpeg_stream(
     }
 }
 
-fn get_ffmpeg_path() -> String {
-    if std::env::consts::OS == "macos" {
-        if std::path::Path::new("/opt/homebrew/bin/ffmpeg").exists() {
-            return "/opt/homebrew/bin/ffmpeg".to_string();
-        }
-        if std::path::Path::new("/usr/local/bin/ffmpeg").exists() {
-            return "/usr/local/bin/ffmpeg".to_string();
-        }
+fn binary_name(name: &str) -> String {
+    if cfg!(target_os = "windows") {
+        format!("{}.exe", name)
+    } else {
+        name.to_string()
     }
-    "ffmpeg".to_string()
 }
 
-fn get_ffprobe_path() -> String {
-    if std::env::consts::OS == "macos" {
-        if std::path::Path::new("/opt/homebrew/bin/ffprobe").exists() {
-            return "/opt/homebrew/bin/ffprobe".to_string();
-        }
-        if std::path::Path::new("/usr/local/bin/ffprobe").exists() {
-            return "/usr/local/bin/ffprobe".to_string();
+fn is_executable_candidate(path: &Path) -> bool {
+    path.is_file()
+}
+
+fn bundled_binary(app: &AppHandle, name: &str) -> Option<PathBuf> {
+    let resource_dir = app.path().resource_dir().ok()?;
+    let exe_name = binary_name(name);
+    let candidates = [
+        resource_dir.join("ffmpeg").join(&exe_name),
+        resource_dir.join(&exe_name),
+    ];
+    candidates
+        .into_iter()
+        .find(|candidate| is_executable_candidate(candidate))
+}
+
+fn sibling_binary(custom_ffmpeg: &str, sibling_name: &str) -> Option<String> {
+    let sibling = Path::new(custom_ffmpeg)
+        .parent()?
+        .join(binary_name(sibling_name));
+    if is_executable_candidate(&sibling) {
+        Some(sibling.to_string_lossy().to_string())
+    } else {
+        None
+    }
+}
+
+fn resolve_binary(app: &AppHandle, name: &str, custom_path: Option<&str>) -> BinaryResolution {
+    if let Some(custom) = custom_path.map(str::trim).filter(|value| !value.is_empty()) {
+        let path = Path::new(custom);
+        if is_executable_candidate(path) {
+            return BinaryResolution { path: custom.to_string(), source: "custom".to_string() };
         }
     }
-    "ffprobe".to_string()
+
+    if let Some(path) = bundled_binary(app, name) {
+        return BinaryResolution {
+            path: path.to_string_lossy().to_string(),
+            source: "bundled".to_string(),
+        };
+    }
+
+    if cfg!(target_os = "macos") {
+        for candidate in [
+            format!("/opt/homebrew/bin/{}", name),
+            format!("/usr/local/bin/{}", name),
+            format!("/usr/bin/{}", name),
+        ] {
+            if Path::new(&candidate).exists() {
+                return BinaryResolution { path: candidate, source: "system".to_string() };
+            }
+        }
+    }
+
+    BinaryResolution { path: binary_name(name), source: "system".to_string() }
+}
+
+fn resolve_ffmpeg(app: &AppHandle, custom_path: Option<&str>) -> BinaryResolution {
+    resolve_binary(app, "ffmpeg", custom_path)
+}
+
+fn resolve_ffprobe(app: &AppHandle, custom_ffmpeg_path: Option<&str>) -> BinaryResolution {
+    if let Some(custom_ffmpeg) = custom_ffmpeg_path.map(str::trim).filter(|value| !value.is_empty()) {
+        if let Some(ffprobe) = sibling_binary(custom_ffmpeg, "ffprobe") {
+            return BinaryResolution { path: ffprobe, source: "custom".to_string() };
+        }
+    }
+    resolve_binary(app, "ffprobe", None)
+}
+
+fn ffmpeg_version(binary: &str) -> Option<String> {
+    let output = Command::new(binary)
+        .arg("-version")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
 }
 
 #[tauri::command]
-fn check_ffmpeg_available() -> bool {
-    Command::new(get_ffmpeg_path())
+fn get_ffmpeg_info(app: AppHandle, custom_path: Option<String>) -> FFmpegInfo {
+    let resolved = resolve_ffmpeg(&app, custom_path.as_deref());
+    match ffmpeg_version(&resolved.path) {
+        Some(version) => FFmpegInfo {
+            available: true,
+            path: resolved.path,
+            version,
+            source: resolved.source,
+        },
+        None => FFmpegInfo {
+            available: false,
+            path: resolved.path,
+            version: "Not available".to_string(),
+            source: "missing".to_string(),
+        },
+    }
+}
+
+#[tauri::command]
+fn select_custom_ffmpeg_binary() -> Option<String> {
+    rfd::FileDialog::new()
+        .set_title("Select FFmpeg Binary")
+        .pick_file()
+        .map(|path| path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn check_ffmpeg_available(app: AppHandle) -> bool {
+    Command::new(resolve_ffmpeg(&app, None).path)
         .arg("-version")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+fn ffmpeg_supports_encoder(app: &AppHandle, encoder: &str, custom_path: Option<&str>) -> bool {
+    Command::new(resolve_ffmpeg(app, custom_path).path)
+        .args(["-hide_banner", "-encoders"])
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).contains(encoder))
+        .unwrap_or(false)
+}
+
+fn resolve_hardware_acc(app: &AppHandle, requested: &str, custom_path: Option<&str>) -> String {
+    if requested == "Software" {
+        return "Software".to_string();
+    }
+
+    if requested != "Auto" {
+        return requested.to_string();
+    }
+
+    if cfg!(target_os = "macos") && ffmpeg_supports_encoder(app, "h264_videotoolbox", custom_path) {
+        return "VideoToolbox".to_string();
+    }
+
+    if cfg!(target_os = "windows") {
+        if ffmpeg_supports_encoder(app, "h264_nvenc", custom_path) {
+            return "NVENC".to_string();
+        }
+        if ffmpeg_supports_encoder(app, "h264_qsv", custom_path) {
+            return "QuickSync".to_string();
+        }
+    }
+
+    if cfg!(target_os = "linux") && ffmpeg_supports_encoder(app, "h264_nvenc", custom_path) {
+        return "NVENC".to_string();
+    }
+
+    "Software".to_string()
 }
 
 #[derive(Serialize)]
@@ -263,8 +458,9 @@ struct VideoMetadata {
 }
 
 #[tauri::command]
-fn probe_video_file(path: String) -> Result<VideoMetadata, String> {
-    let output = Command::new(get_ffprobe_path())
+fn probe_video_file(app: AppHandle, path: String) -> Result<VideoMetadata, String> {
+    let ffprobe = resolve_ffprobe(&app, None);
+    let output = Command::new(ffprobe.path)
         .args(&[
             "-v", "quiet",
             "-print_format", "json",
@@ -514,6 +710,7 @@ pub struct PlayoutConfig {
     rtmp_target: String,
     loop_forever: bool,
     repeat_count: u32,
+    ffmpeg_path: Option<String>,
 }
 
 /// Builds the per-clip normaliser: decode ANY source format and emit one fixed
@@ -608,6 +805,29 @@ fn start_playout_stream(
         return Err("Playlist has no playable files".to_string());
     }
 
+    let ffmpeg = resolve_ffmpeg(&app, config.ffmpeg_path.as_deref());
+    let resolved_hardware_acc = resolve_hardware_acc(&app, &config.hardware_acc, config.ffmpeg_path.as_deref());
+    if resolved_hardware_acc != config.hardware_acc {
+        let _ = app.emit(
+            "ffmpeg-log",
+            LogPayload {
+                stream_id: stream_id.clone(),
+                line: format!(
+                    "Auto encoder selected: {}",
+                    if resolved_hardware_acc == "Software" {
+                        "libx264 software fallback"
+                    } else {
+                        resolved_hardware_acc.as_str()
+                    }
+                ),
+            },
+        );
+    }
+    let config = PlayoutConfig {
+        hardware_acc: resolved_hardware_acc,
+        ..config
+    };
+
     let sender_args: Vec<String> = vec![
         "-hide_banner".into(),
         "-nostdin".into(),
@@ -625,7 +845,7 @@ fn start_playout_stream(
         config.rtmp_target.clone(),
     ];
 
-    let mut sender = Command::new(get_ffmpeg_path())
+    let mut sender = Command::new(&ffmpeg.path)
         .args(&sender_args)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -744,7 +964,7 @@ fn start_playout_stream(
                 );
 
                 let args = normalizer_args(clip, &config, ts_offset);
-                let mut child = match Command::new(get_ffmpeg_path())
+                let mut child = match Command::new(&ffmpeg.path)
                     .args(&args)
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
@@ -862,6 +1082,11 @@ pub fn run() {
             start_ffmpeg_stream,
             stop_ffmpeg_stream,
             check_ffmpeg_available,
+            get_ffmpeg_info,
+            select_custom_ffmpeg_binary,
+            save_profile_stream_key,
+            get_profile_stream_key,
+            delete_profile_stream_key,
             get_process_telemetry,
             probe_video_file,
             start_playout_stream,

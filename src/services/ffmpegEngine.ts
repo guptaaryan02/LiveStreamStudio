@@ -1,5 +1,25 @@
 import { Playlist, StreamPlatform, HardwareAcceleration, StreamInstance, LogEntry, CompatibilityAnalysis, OutputResolution, OutputFps, AppSettings } from '../types';
 
+const SECRET_PLACEHOLDER = '***STREAM_KEY***';
+
+export function maskStreamKey(value: string, streamKey?: string): string {
+  if (!value) return value;
+  let masked = value;
+
+  if (streamKey?.trim()) {
+    masked = masked.split(streamKey.trim()).join(SECRET_PLACEHOLDER);
+  }
+
+  return masked.replace(
+    /(rtmps?:\/\/[^\s"']+\/)([^\s"']{4,})/gi,
+    (_match, prefix) => `${prefix}${SECRET_PLACEHOLDER}`
+  );
+}
+
+export function sanitizeLogMessage(message: string): string {
+  return maskStreamKey(message);
+}
+
 export const resolveLocalPath = (path: string): string => {
   if (!path) return '';
   let cleanPath = path;
@@ -140,7 +160,7 @@ export function generateFFmpegArgs(
   platform: StreamPlatform,
   rtmpUrl: string,
   streamKey: string,
-  hardwareAcc: HardwareAcceleration = 'VideoToolbox',
+  hardwareAcc: HardwareAcceleration = 'Auto',
   bitrateKbps: number = 4500,
   settings?: AppSettings
 ): string[] {
@@ -217,7 +237,7 @@ export function generateFFmpegCommand(
   platform: StreamPlatform,
   rtmpUrl: string,
   streamKey: string,
-  hardwareAcc: HardwareAcceleration = 'VideoToolbox',
+  hardwareAcc: HardwareAcceleration = 'Auto',
   bitrateKbps: number = 4500,
   settings?: AppSettings
 ): string {
@@ -233,6 +253,21 @@ export function generateFFmpegCommand(
   });
 
   return `"${ffmpegPath}" ${formattedArgs.join(' ')}`;
+}
+
+export function generateSafeFFmpegCommand(
+  playlist: Playlist,
+  platform: StreamPlatform,
+  rtmpUrl: string,
+  streamKey: string,
+  hardwareAcc: HardwareAcceleration = 'Auto',
+  bitrateKbps: number = 4500,
+  settings?: AppSettings
+): string {
+  return maskStreamKey(
+    generateFFmpegCommand(playlist, platform, rtmpUrl, streamKey, hardwareAcc, bitrateKbps, settings),
+    streamKey
+  );
 }
 
 /** Absolute disk paths for every clip FFmpeg can actually open, in play order. */
@@ -278,6 +313,7 @@ export function buildPlayoutConfig(
     rtmpTarget: `${rtmpUrl}/${streamKey}`,
     loopForever: playlist.isInfiniteLoop,
     repeatCount: Math.max(1, playlist.repeatCount || 1),
+    ffmpegPath: settings?.useCustomFfmpeg ? settings.ffmpegPath : undefined,
   };
 }
 
@@ -320,7 +356,7 @@ export function generateLiveStreamShellScript(
   platform: StreamPlatform,
   rtmpUrl: string,
   streamKey: string,
-  hardwareAcc: HardwareAcceleration = 'VideoToolbox',
+  hardwareAcc: HardwareAcceleration = 'Auto',
   bitrateKbps: number = 4500
 ): string {
   const playlistTxt = generatePlaylistFileContent(playlist);

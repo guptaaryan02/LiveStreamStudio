@@ -138,6 +138,7 @@ export type OutputFps = 'original' | '24' | '25' | '30' | '50' | '60';
 export interface AppSettings {
   theme: 'dark' | 'light' | 'system';
   ffmpegPath: string;
+  useCustomFfmpeg: boolean;
   hardwareAcc: HardwareAcceleration;
   defaultBitrateKbps: number;
   autoRecoveryEnabled: boolean;

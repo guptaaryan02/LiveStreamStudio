@@ -430,6 +430,7 @@ export const DashboardView: React.FC = () => {
                   onChange={(e) => setHardwareAcc(e.target.value as HardwareAcceleration)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500 font-mono"
                 >
+                  <option value="Auto">Auto-detect best encoder</option>
                   <option value="VideoToolbox">Apple VideoToolbox (GPU)</option>
                   <option value="NVENC">NVIDIA NVENC (GPU)</option>
                   <option value="QuickSync">Intel QuickSync (GPU)</option>

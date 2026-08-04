@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useStudioStore } from '../../store/useStudioStore';
 import { Terminal, Search, Trash2, Download, Copy, Code, Filter, CheckCircle2 } from 'lucide-react';
 import { LogLevel } from '../../types';
-import { generateFFmpegCommand } from '../../services/ffmpegEngine';
+import { generateSafeFFmpegCommand, sanitizeLogMessage } from '../../services/ffmpegEngine';
 
 export const LogsView: React.FC = () => {
   const { logs, clearLogs, instances, playlists, settings } = useStudioStore();
@@ -14,7 +14,7 @@ export const LogsView: React.FC = () => {
   const activePlaylist = playlists.find((p) => p.id === activeInstance?.playlistId) || playlists[0];
 
   const generatedCommand = activePlaylist && activeInstance
-    ? generateFFmpegCommand(
+    ? generateSafeFFmpegCommand(
         activePlaylist,
         activeInstance.platform,
         activeInstance.rtmpUrl,
@@ -31,7 +31,7 @@ export const LogsView: React.FC = () => {
   });
 
   const handleDownloadLog = () => {
-    const logText = logs.map((l) => `[${l.timestamp}] [${l.level}] [${l.streamName}] ${l.message}`).join('\n');
+    const logText = logs.map((l) => `[${l.timestamp}] [${l.level}] [${l.streamName}] ${sanitizeLogMessage(l.message)}`).join('\n');
     const blob = new Blob([logText], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -161,7 +161,7 @@ export const LogsView: React.FC = () => {
                         : 'text-slate-200'
                     }`}
                   >
-                    {log.message}
+                    {sanitizeLogMessage(log.message)}
                   </span>
                 </div>
               ))

@@ -12,7 +12,7 @@ export const ProfilesView: React.FC = () => {
   const [rtmpUrl, setRtmpUrl] = useState('rtmp://a.rtmp.youtube.com/live2');
   const [streamKey, setStreamKey] = useState('');
   const [showKey, setShowKey] = useState(false);
-  const [hardwareAcc, setHardwareAcc] = useState<HardwareAcceleration>('VideoToolbox');
+  const [hardwareAcc, setHardwareAcc] = useState<HardwareAcceleration>('Auto');
   const [targetBitrateKbps, setTargetBitrateKbps] = useState(4500);
 
   const defaultRtmpUrls: Record<StreamPlatform, string> = {
@@ -124,13 +124,11 @@ export const ProfilesView: React.FC = () => {
               </div>
 
               <button
-                onClick={() => {
-                  if (!prof.streamKey) {
-                    alert('Please edit profile and paste a valid Stream Key!');
-                    return;
+                onClick={async () => {
+                  const launched = await launchProfile(prof.id);
+                  if (launched) {
+                    setActiveTab('dashboard');
                   }
-                  launchProfile(prof.id);
-                  setActiveTab('dashboard');
                 }}
                 className="w-full bg-gradient-to-r from-red-600 to-indigo-600 hover:from-red-500 hover:to-indigo-500 text-white font-bold text-xs py-2.5 rounded-xl shadow-md transition flex items-center justify-center space-x-2 mt-4"
               >
@@ -197,6 +195,7 @@ export const ProfilesView: React.FC = () => {
                     onChange={(e) => setHardwareAcc(e.target.value as HardwareAcceleration)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none"
                   >
+                    <option value="Auto">Auto-detect best encoder</option>
                     <option value="VideoToolbox">Apple VideoToolbox</option>
                     <option value="NVENC">NVIDIA NVENC</option>
                     <option value="QuickSync">Intel QuickSync</option>
