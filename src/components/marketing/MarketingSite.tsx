@@ -17,10 +17,22 @@ import {
 type MarketingPage = 'home' | 'download' | 'support';
 type Platform = 'macOS' | 'Windows' | 'Linux';
 
-const downloadFiles: Record<Platform, string> = {
-  macOS: '/downloads/LiveStream-Studio-macOS.dmg',
-  Windows: '/downloads/LiveStream-Studio-Windows.exe',
-  Linux: '/downloads/LiveStream-Studio-Linux.AppImage',
+const downloadFiles: Record<Platform, { href: string; available: boolean; status: string }> = {
+  macOS: {
+    href: '/downloads/LiveStream-Studio-macOS.dmg',
+    available: true,
+    status: 'Available now',
+  },
+  Windows: {
+    href: '/downloads/LiveStream-Studio-Windows.exe',
+    available: false,
+    status: 'Build pending',
+  },
+  Linux: {
+    href: '/downloads/LiveStream-Studio-Linux.AppImage',
+    available: false,
+    status: 'Build pending',
+  },
 };
 
 const getPageFromHash = (): MarketingPage => {
@@ -154,7 +166,7 @@ const DownloadPage: React.FC<{ onDownloaded: (platform: Platform) => void }> = (
           platform="macOS"
           icon={<Apple className="h-6 w-6" />}
           format="DMG"
-          note="Apple Silicon build first. Intel/universal build can be added when release CI is ready."
+          note="Apple Silicon DMG for macOS. Intel/universal builds can be added when release CI is ready."
           onClick={startDownload}
         />
         <DownloadCard
@@ -249,15 +261,26 @@ const DownloadCard: React.FC<{
     </div>
     <h2 className="mt-5 text-xl font-black text-white">{platform}</h2>
     <p className="mt-3 min-h-20 text-sm leading-6 text-slate-400">{note}</p>
-    <a
-      href={downloadFiles[platform]}
-      download
-      onClick={() => startAfterClick(onClick, platform)}
-      className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-3 text-sm font-bold text-white hover:bg-red-500"
-    >
-      <Download className="h-4 w-4" />
-      Download for {platform}
-    </a>
+    {downloadFiles[platform].available ? (
+      <a
+        href={downloadFiles[platform].href}
+        download
+        onClick={() => startAfterClick(onClick, platform)}
+        className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-3 text-sm font-bold text-white hover:bg-red-500"
+      >
+        <Download className="h-4 w-4" />
+        Download for {platform}
+      </a>
+    ) : (
+      <button
+        type="button"
+        onClick={() => goTo('support')}
+        className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/10 px-4 py-3 text-sm font-bold text-slate-300 hover:bg-white/15"
+      >
+        <HeartHandshake className="h-4 w-4" />
+        {downloadFiles[platform].status}
+      </button>
+    )}
   </section>
 );
 
