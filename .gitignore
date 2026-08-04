@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+npm-cache/
+
+# Build output
+dist/
+src-tauri/target/
+src-tauri/gen/
+
+# Generated at runtime by the streaming engine
+livestream_playlist_*.txt
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local secrets — stream keys must never be committed
+.env
+.env.local

@@ -1,0 +1,211 @@
+import { VideoItem, Playlist, StreamProfile, ScheduleItem } from '../types';
+
+// Real open-source MP4 video URLs that stream real video & audio directly in HTML5 <video> elements
+export const SAMPLE_VIDEOS: VideoItem[] = [
+  {
+    id: 'vid-1',
+    title: 'Big Buck Bunny - 1080p Full HD Sample',
+    category: 'Krishna',
+    duration: 596, // ~10 mins
+    resolution: '1080p (1920x1080)',
+    sizeMb: 276,
+    thumbnail: 'https://images.unsplash.com/photo-1609102026400-3d026938a161?w=600&auto=format&fit=crop&q=80',
+    filePath: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    fps: 60,
+  },
+  {
+    id: 'vid-2',
+    title: 'Tears of Steel - 4K Sci-Fi Short Film',
+    category: 'Shiv',
+    duration: 734, // ~12 mins
+    resolution: '4K (3840x2160)',
+    sizeMb: 540,
+    thumbnail: 'https://images.unsplash.com/photo-1567157577867-05ccb1388e66?w=600&auto=format&fit=crop&q=80',
+    filePath: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
+    fps: 60,
+  },
+  {
+    id: 'vid-3',
+    title: 'Sintel 3D Animation - 1080p HD',
+    category: 'Hanuman',
+    duration: 522,
+    resolution: '1080p (1920x1080)',
+    sizeMb: 320,
+    thumbnail: 'https://images.unsplash.com/photo-1620052581237-5d36667be337?w=600&auto=format&fit=crop&q=80',
+    filePath: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
+    fps: 30,
+  },
+  {
+    id: 'vid-4',
+    title: 'Elephant Dream 4K Master',
+    category: 'Meditation',
+    duration: 653, // ~11 mins
+    resolution: '1080p (1920x1080)',
+    sizeMb: 380,
+    thumbnail: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&auto=format&fit=crop&q=80',
+    filePath: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    fps: 30,
+  },
+  {
+    id: 'vid-5',
+    title: 'For Bigger Blazes - 1080p Stream Sample',
+    category: 'Bhajan',
+    duration: 15,
+    resolution: '1080p (1920x1080)',
+    sizeMb: 15,
+    thumbnail: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=600&auto=format&fit=crop&q=80',
+    filePath: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    fps: 60,
+  },
+  {
+    id: 'vid-6',
+    title: 'For Bigger Escape - 1080p 60fps',
+    category: 'Krishna',
+    duration: 15,
+    resolution: '1080p (1920x1080)',
+    sizeMb: 14,
+    thumbnail: 'https://images.unsplash.com/photo-1532012164546-f43778669b00?w=600&auto=format&fit=crop&q=80',
+    filePath: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    fps: 60,
+  },
+  {
+    id: 'vid-7',
+    title: 'For Bigger Fun - 1080p HD',
+    category: 'Ram',
+    duration: 60,
+    resolution: '1080p (1920x1080)',
+    sizeMb: 45,
+    thumbnail: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=600&auto=format&fit=crop&q=80',
+    filePath: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+    fps: 60,
+  },
+  {
+    id: 'vid-8',
+    title: 'For Bigger Joyrides - Live Audio Video',
+    category: 'Podcast',
+    duration: 15,
+    resolution: '1080p (1920x1080)',
+    sizeMb: 12,
+    thumbnail: 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=600&auto=format&fit=crop&q=80',
+    filePath: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+    fps: 30,
+  }
+];
+
+export const INITIAL_PLAYLISTS: Playlist[] = [
+  {
+    id: 'pl-1',
+    name: 'Morning Krishna 24/7 Stream',
+    videos: [SAMPLE_VIDEOS[0], SAMPLE_VIDEOS[4], SAMPLE_VIDEOS[5]],
+    repeatCount: -1, // Infinite Loop
+    isInfiniteLoop: true,
+    shuffle: false,
+    order: 'ascending',
+    createdAt: '2026-07-20 08:00',
+    updatedAt: '2026-07-22 10:30',
+  },
+  {
+    id: 'pl-2',
+    name: 'Evening Bhajan & Aarti Stream',
+    videos: [SAMPLE_VIDEOS[1], SAMPLE_VIDEOS[6]],
+    repeatCount: 10,
+    isInfiniteLoop: false,
+    shuffle: false,
+    order: 'ascending',
+    createdAt: '2026-07-21 17:00',
+    updatedAt: '2026-07-22 18:15',
+  },
+  {
+    id: 'pl-3',
+    name: 'Hanuman Special 108 Loops',
+    videos: [SAMPLE_VIDEOS[2]],
+    repeatCount: 108,
+    isInfiniteLoop: false,
+    shuffle: false,
+    order: 'ascending',
+    createdAt: '2026-07-15 09:00',
+    updatedAt: '2026-07-22 09:00',
+  },
+  {
+    id: 'pl-4',
+    name: 'Night Sleep Meditation 432Hz',
+    videos: [SAMPLE_VIDEOS[3]],
+    repeatCount: -1,
+    isInfiniteLoop: true,
+    shuffle: false,
+    order: 'ascending',
+    createdAt: '2026-07-18 21:00',
+    updatedAt: '2026-07-22 22:00',
+  }
+];
+
+export const INITIAL_PROFILES: StreamProfile[] = [
+  {
+    id: 'prof-1',
+    name: 'YouTube Primary - Morning Krishna',
+    playlistId: 'pl-1',
+    platform: 'youtube',
+    rtmpUrl: 'rtmp://a.rtmp.youtube.com/live2',
+    streamKey: '', // Sample profile — the user supplies the real key
+    repeatCount: -1,
+    isInfiniteLoop: true,
+    hardwareAcc: 'VideoToolbox',
+    targetBitrateKbps: 4500,
+    resolution: '1080p60',
+    fps: 60,
+  },
+  {
+    id: 'prof-2',
+    name: 'Facebook Live - Shiv Tandav 24x7',
+    playlistId: 'pl-2',
+    platform: 'facebook',
+    rtmpUrl: 'rtmps://live-api-s.facebook.com:443/rtmp',
+    streamKey: 'FB-984029348123-0-AbcDefGhi',
+    repeatCount: 50,
+    isInfiniteLoop: false,
+    hardwareAcc: 'NVENC',
+    targetBitrateKbps: 4000,
+    resolution: '1080p30',
+    fps: 30,
+  },
+  {
+    id: 'prof-3',
+    name: 'Twitch Channel - Lo-Fi Beats',
+    playlistId: 'pl-4',
+    platform: 'twitch',
+    rtmpUrl: 'rtmp://live.twitch.tv/app',
+    streamKey: '', // Sample profile — the user supplies the real key
+    repeatCount: -1,
+    isInfiniteLoop: true,
+    hardwareAcc: 'Auto',
+    targetBitrateKbps: 6000,
+    resolution: '1080p60',
+    fps: 60,
+  }
+];
+
+export const INITIAL_SCHEDULE: ScheduleItem[] = [
+  {
+    id: 'sch-1',
+    title: 'Daily Morning Krishna Stream Launch',
+    profileId: 'prof-1',
+    profileName: 'YouTube Primary - Morning Krishna',
+    scheduledTime: '06:00 AM',
+    repeatDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    autoStart: true,
+    autoStop: true,
+    stopAfterMinutes: 240,
+    isActive: true,
+  },
+  {
+    id: 'sch-2',
+    title: 'Hanuman Tuesday 108 Times Stream',
+    profileId: 'prof-2',
+    profileName: 'Facebook Live - Shiv Tandav 24x7',
+    scheduledTime: '07:30 AM',
+    repeatDays: ['Tue'],
+    autoStart: true,
+    autoStop: false,
+    isActive: true,
+  }
+];
