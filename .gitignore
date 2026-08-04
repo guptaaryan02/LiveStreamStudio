@@ -10,6 +10,16 @@ src-tauri/gen/
 # Generated at runtime by the streaming engine
 livestream_playlist_*.txt
 
+# Bundled FFmpeg binaries — ~100 MB, fetched per platform by
+# scripts/fetch-ffmpeg.sh (CI runs it too). Never commit these.
+src-tauri/resources/ffmpeg/ffmpeg
+src-tauri/resources/ffmpeg/ffmpeg.exe
+src-tauri/resources/ffmpeg/ffprobe
+src-tauri/resources/ffmpeg/ffprobe.exe
+src-tauri/resources/ffmpeg/PROVENANCE.txt
+src-tauri/resources/ffmpeg/LICENSE*
+src-tauri/resources/ffmpeg/COPYING*
+
 # Editor / OS
 .DS_Store
 *.swp

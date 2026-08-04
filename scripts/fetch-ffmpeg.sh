@@ -30,10 +30,34 @@ FFMPEG_RELEASE="${FFMPEG_RELEASE:-latest}"
 BTBN_BASE="https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_RELEASE}"
 BTBN_SOURCE="https://github.com/BtbN/FFmpeg-Builds/releases/tag/${FFMPEG_RELEASE}"
 
-# macOS has no single canonical static GPL build, so the URL must be supplied
-# explicitly. Known sources: osxexperts.net, martin-riedl.de, evermeet.cx
-# (x86_64). Alternatively build from source with --enable-gpl --enable-libx264.
-FFMPEG_MACOS_URL="${FFMPEG_MACOS_URL:-}"
+# macOS has no single canonical static GPL build, so the source is pinned here
+# explicitly, with checksums, and can be overridden by environment.
+#
+# Default: osxexperts.net static arm64 builds (FFmpeg 8.1, --enable-gpl
+# --enable-libx264). They ship ffmpeg and ffprobe as separate archives.
+# Alternatives: martin-riedl.de, or build from source yourself.
+FFMPEG_MACOS_URL="${FFMPEG_MACOS_URL:-https://www.osxexperts.net/ffmpeg81arm.zip}"
+FFPROBE_MACOS_URL="${FFPROBE_MACOS_URL:-https://www.osxexperts.net/ffprobe81arm.zip}"
+FFMPEG_MACOS_SHA256="${FFMPEG_MACOS_SHA256:-9a08d61f9328e8164ba560ee7a79958e357307fcfeea6fe626b7d66cdc287028}"
+FFPROBE_MACOS_SHA256="${FFPROBE_MACOS_SHA256:-aab17ac7379c1178aaf400c3ef36cdb67db0b75b1a23eeef2cb9f658be8844e6}"
+
+verify_sha256() {
+  local file="$1" expected="$2"
+  [ -z "$expected" ] && return 0
+  local actual
+  if command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "$file" | awk '{print $1}')"
+  else
+    actual="$(sha256sum "$file" | awk '{print $1}')"
+  fi
+  if [ "$actual" != "$expected" ]; then
+    fail "Checksum mismatch for $(basename "$file")
+       expected: $expected
+       actual:   $actual
+       Refusing to bundle a binary that does not match the pinned checksum."
+  fi
+  log "Checksum verified: $actual"
+}
 
 os="$(uname -s)"
 arch="$(uname -m)"
@@ -52,21 +76,28 @@ mkdir -p "$DEST"
 
 case "$os" in
   Darwin)
-    if [ -z "$FFMPEG_MACOS_URL" ]; then
-      fail "Set FFMPEG_MACOS_URL to a static macOS ${arch} GPL FFmpeg archive.
-       There is no canonical prebuilt static GPL FFmpeg for macOS, and Homebrew's
-       binaries link against /opt/homebrew dylibs so they cannot be shipped.
-       Either point this at a trusted static build or compile FFmpeg yourself
-       with --enable-gpl --enable-libx264 --enable-videotoolbox."
-    fi
+    extract_into() {
+      local archive="$1" url="$2"
+      case "$url" in
+        *.zip)     ( cd "$WORK" && unzip -qo "$archive" ) ;;
+        *.tar.xz)  ( cd "$WORK" && tar -xJf "$archive" ) ;;
+        *.tar.gz)  ( cd "$WORK" && tar -xzf "$archive" ) ;;
+        *)         fail "Unsupported archive type: $url" ;;
+      esac
+    }
+
+    # NOTE: these sources publish the checksum of the extracted BINARY, not of
+    # the zip, so verification happens after extraction (see below).
     download "$FFMPEG_MACOS_URL" "$WORK/ffmpeg-macos.archive"
+    extract_into "ffmpeg-macos.archive" "$FFMPEG_MACOS_URL"
     SOURCE_URL="$FFMPEG_MACOS_URL"
-    ( cd "$WORK" && case "$FFMPEG_MACOS_URL" in
-        *.zip)     unzip -qo ffmpeg-macos.archive ;;
-        *.tar.xz)  tar -xJf ffmpeg-macos.archive ;;
-        *.tar.gz)  tar -xzf ffmpeg-macos.archive ;;
-        *)         fail "Unsupported archive type: $FFMPEG_MACOS_URL" ;;
-      esac )
+
+    # Most macOS sources publish ffprobe as its own archive.
+    if [ -n "$FFPROBE_MACOS_URL" ]; then
+      download "$FFPROBE_MACOS_URL" "$WORK/ffprobe-macos.archive"
+      extract_into "ffprobe-macos.archive" "$FFPROBE_MACOS_URL"
+      SOURCE_URL="$FFMPEG_MACOS_URL + $FFPROBE_MACOS_URL"
+    fi
     ;;
   Linux)
     ARCHIVE="ffmpeg-master-latest-linux64-gpl.tar.xz"
@@ -97,6 +128,26 @@ done
 
 # Keep the build's own licence texts next to the binaries.
 find "$WORK" -type f \( -iname "LICENSE*" -o -iname "COPYING*" \) -exec cp {} "$DEST/" \; 2>/dev/null || true
+
+if [ "$os" = "Darwin" ]; then
+  # Verify against the publisher's checksums BEFORE touching the binaries —
+  # signing or stripping xattrs would change the hash.
+  verify_sha256 "$DEST/ffmpeg" "$FFMPEG_MACOS_SHA256"
+  [ -f "$DEST/ffprobe" ] && verify_sha256 "$DEST/ffprobe" "$FFPROBE_MACOS_SHA256"
+
+  for tool in ffmpeg ffprobe; do
+    [ -f "$DEST/$tool" ] || continue
+    # A downloaded file carries com.apple.quarantine; the app would be blocked
+    # from executing it.
+    xattr -d com.apple.quarantine "$DEST/$tool" 2>/dev/null || true
+    # Apple Silicon refuses to run unsigned binaries at all. Ad-hoc signing is
+    # enough to execute; Developer ID signing happens later, at release time.
+    if ! codesign --verify --strict "$DEST/$tool" >/dev/null 2>&1; then
+      log "Ad-hoc signing $tool so macOS will execute it"
+      codesign --force --sign - "$DEST/$tool" >/dev/null 2>&1 || true
+    fi
+  done
+fi
 
 BIN="$DEST/ffmpeg"
 [ -f "$BIN" ] || BIN="$DEST/ffmpeg.exe"

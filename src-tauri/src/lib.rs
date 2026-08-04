@@ -277,6 +277,33 @@ fn is_executable_candidate(path: &Path) -> bool {
     path.is_file()
 }
 
+/// Confirms a candidate really is the tool we want, by running it.
+///
+/// Existing and being executable is not enough: any file dropped into the
+/// bundle's ffmpeg folder would otherwise be trusted and every stream would
+/// fail with "FFmpeg is not available" while a perfectly good system FFmpeg sat
+/// unused. Verifying costs one short-lived process and turns a fatal
+/// misconfiguration into a silent fallback.
+fn responds_as_tool(path: &Path, name: &str) -> bool {
+    let Ok(output) = Command::new(path)
+        .arg("-version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return false;
+    };
+
+    if !output.status.success() {
+        return false;
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .to_lowercase()
+        .contains(&format!("{} version", name))
+}
+
 fn bundled_binary(app: &AppHandle, name: &str) -> Option<PathBuf> {
     let resource_dir = app.path().resource_dir().ok()?;
     let exe_name = binary_name(name);
@@ -309,10 +336,18 @@ fn resolve_binary(app: &AppHandle, name: &str, custom_path: Option<&str>) -> Bin
     }
 
     if let Some(path) = bundled_binary(app, name) {
-        return BinaryResolution {
-            path: path.to_string_lossy().to_string(),
-            source: "bundled".to_string(),
-        };
+        if responds_as_tool(&path, name) {
+            return BinaryResolution {
+                path: path.to_string_lossy().to_string(),
+                source: "bundled".to_string(),
+            };
+        }
+        log::warn!(
+            "Ignoring bundled {} at {} — it does not respond as {}. Falling back to a system install.",
+            name,
+            path.display(),
+            name
+        );
     }
 
     if cfg!(target_os = "macos") {
