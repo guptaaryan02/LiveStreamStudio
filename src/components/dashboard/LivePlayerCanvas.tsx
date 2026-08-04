@@ -20,23 +20,35 @@ export const LivePlayerCanvas: React.FC<LivePlayerCanvasProps> = ({ instance, pl
   const { instances, playlists, tickTelemetry } = useStudioStore();
 
   const videoList = playlist?.videos || [];
-  const currentVideo: VideoItem | undefined = videoList[instance.currentVideoIndex] || videoList[0];
 
   const isLive = instance.status === 'live';
   const isReconnecting = instance.status === 'reconnecting';
+
+  // While a stream is running the engine decides what is on air. While idle the
+  // preview walks the playlist on its own — the dashboard rebuilds its
+  // placeholder instance on every render with index 0, so the preview cannot
+  // rely on it to remember where it got to.
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const activeIndex = isLive || isReconnecting ? instance.currentVideoIndex || 0 : previewIndex;
+  const currentVideo: VideoItem | undefined = videoList[activeIndex] || videoList[0];
+
+  // Start over when the playlist itself changes.
+  useEffect(() => {
+    setPreviewIndex(0);
+  }, [playlist?.id, videoList.length]);
 
   // Handle video source changes
   useEffect(() => {
     if (videoRef.current && currentVideo) {
       videoRef.current.src = currentVideo.filePath;
       videoRef.current.load(); // Force load first frame metadata when paused
-      if (isLive) {
+      if (isLive || isPlaying) {
         videoRef.current.play().catch(() => {
           // Autoplay blocked by browser policy until user interaction
         });
       }
     }
-  }, [currentVideo?.filePath, instance.currentVideoIndex, isLive]);
+  }, [currentVideo?.filePath, activeIndex, isLive]);
 
   // Handle Play/Pause state changes
   useEffect(() => {
@@ -65,6 +77,15 @@ export const LivePlayerCanvas: React.FC<LivePlayerCanvasProps> = ({ instance, pl
   };
 
   const handleVideoEnded = () => {
+    const total = videoList.length;
+    if (total === 0) return;
+
+    // Idle preview: advance locally and loop back to the first clip.
+    if (!isLive && !isReconnecting) {
+      setPreviewIndex((prev) => (prev + 1) % total);
+      return;
+    }
+
     // Automatically advance playlist
     useStudioStore.setState((state) => {
       const updatedInstances = state.instances.map((inst) => {
@@ -216,7 +237,7 @@ export const LivePlayerCanvas: React.FC<LivePlayerCanvasProps> = ({ instance, pl
           <div className="flex items-center justify-between">
             <div>
               <div className="text-xs text-indigo-400 font-mono font-semibold tracking-wide flex items-center space-x-2">
-                <span>Video {instance.currentVideoIndex + 1} of {videoList.length}</span>
+                <span>Video {activeIndex + 1} of {videoList.length}</span>
                 <span>•</span>
                 <span>Loop {instance.currentRepeatCount}</span>
               </div>

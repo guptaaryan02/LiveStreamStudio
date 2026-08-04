@@ -608,8 +608,10 @@ export const useStudioStore = create<StudioState>()(
       return;
     }
 
-    // Exponential backoff: 3s, 5s, 10s, 20s, 30s
-    const backoffIntervals = [3000, 5000, 10000, 20000, 30000];
+    // A dropped socket on a working connection comes back immediately, so the
+    // first attempt is near-instant; only repeated failures back off, which is
+    // what stops a genuinely broken endpoint from being hammered.
+    const backoffIntervals = [1000, 2000, 5000, 10000, 20000];
     const waitTime = backoffIntervals[Math.min(currentRetry, backoffIntervals.length - 1)];
 
     const logLine = createFFmpegLogLine(

@@ -46,7 +46,16 @@ export function analyzePlaylistCompatibility(playlist: Playlist): CompatibilityA
     }
     
     let currentScore = 100;
-    
+
+    // Stream ORDER, not just stream content. The concat demuxer maps by index,
+    // so an audio-first file followed by a video-first file sends video packets
+    // into the audio slot: the picture freezes at the boundary while the
+    // connection stays open. This must force Compatibility Mode.
+    if (meta.stream_layout !== firstMeta.stream_layout) {
+      currentScore -= 40;
+      allDifferences.add('Different audio/video stream order');
+    }
+
     if (meta.video_codec !== firstMeta.video_codec) {
       currentScore -= 20;
       allDifferences.add(`${meta.video_codec.toUpperCase()} Codec`);
@@ -85,7 +94,19 @@ export function analyzePlaylistCompatibility(playlist: Playlist): CompatibilityA
   // Fast mode requirements
   // 1. Must be 100% match.
   // 2. Must be h264/aac format (native to RTMP).
-  const isCompatible = minScore === 100 && firstMeta.video_codec === 'h264' && firstMeta.audio_codec === 'aac';
+  // 3. The stream layout must be known — a playlist imported before layout
+  //    detection existed could hide the audio/video-order trap above, so we
+  //    stay on the safe engine until the clips have been probed again.
+  const layoutKnown = playlist.videos.every((v) => !!v.metadata?.stream_layout);
+  if (!layoutKnown) {
+    allDifferences.add('Stream layout not probed yet — using the safe engine');
+  }
+
+  const isCompatible =
+    minScore === 100 &&
+    layoutKnown &&
+    firstMeta.video_codec === 'h264' &&
+    firstMeta.audio_codec === 'aac';
   
   if (minScore === 100 && !isCompatible) {
     allDifferences.add(`Non-native Codec (${firstMeta.video_codec}/${firstMeta.audio_codec})`);

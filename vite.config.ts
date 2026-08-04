@@ -124,11 +124,19 @@ const probeFile = async (filePath: string, ffprobeBin: string) => {
 
     const resolution = video?.width && video?.height ? `${video.width}x${video.height}` : '';
 
+    // Container stream order — a playlist mixing audio-first and video-first
+    // files cannot be stream-copied through the concat demuxer.
+    const streamLayout = (parsed.streams || [])
+      .filter((s: any) => s.codec_type === 'video' || s.codec_type === 'audio')
+      .map((s: any) => `${s.codec_type === 'video' ? 'v' : 'a'}${s.index}`)
+      .join(',');
+
     return {
       duration,
       resolution,
       fps,
       metadata: {
+        stream_layout: streamLayout,
         video_codec: video?.codec_name || '',
         audio_codec: audio?.codec_name || '',
         resolution,

@@ -10,6 +10,8 @@ export interface VideoMetadata {
   sample_rate: number;
   bitrate_kbps: number;
   duration?: number; // seconds, straight from ffprobe
+  /** Stream layout in container order, e.g. "v0,a1" or "a0,v1". */
+  stream_layout?: string;
 }
 
 export interface VideoItem {

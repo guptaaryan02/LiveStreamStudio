@@ -253,6 +253,13 @@ struct VideoMetadata {
     /// Real clip length in seconds — lets the UI import large playlists without
     /// loading every file into a <video> element just to read its duration.
     duration: f64,
+    /// Stream layout in container order, e.g. "v0,a1" or "a0,v1".
+    ///
+    /// The concat demuxer maps files by stream index, so a playlist mixing
+    /// video-first and audio-first files silently feeds video packets into the
+    /// audio slot: the picture freezes at the first boundary while the socket
+    /// stays open. Fast Mode must refuse such playlists.
+    stream_layout: String,
 }
 
 #[tauri::command]
@@ -292,9 +299,19 @@ fn probe_video_file(path: String) -> Result<VideoMetadata, String> {
         }
     }
 
+    let mut stream_layout = String::new();
+
     if let Some(streams) = parsed.get("streams").and_then(|v| v.as_array()) {
-        for stream in streams {
+        for (idx, stream) in streams.iter().enumerate() {
             let codec_type = stream.get("codec_type").and_then(|v| v.as_str()).unwrap_or("");
+
+            if codec_type == "video" || codec_type == "audio" {
+                if !stream_layout.is_empty() {
+                    stream_layout.push(',');
+                }
+                stream_layout.push(if codec_type == "video" { 'v' } else { 'a' });
+                stream_layout.push_str(&idx.to_string());
+            }
             if codec_type == "video" {
                 video_codec = stream.get("codec_name").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 pixel_format = stream.get("pix_fmt").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -333,6 +350,7 @@ fn probe_video_file(path: String) -> Result<VideoMetadata, String> {
         sample_rate,
         bitrate_kbps,
         duration,
+        stream_layout,
     })
 }
 
