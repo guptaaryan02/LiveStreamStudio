@@ -89,16 +89,14 @@ const HomePage = ({ onSection }: { onSection: (id: string) => void }) => <>
 </>;
 
 function StudioPreview() {
-  return <div className="studio-showcase"><div className="showcase-caption"><span><span className="live-dot" /> MEET YOUR NEW BROADCAST DESK</span><span>PRODUCT PREVIEW · SAMPLE DATA</span></div>
-    <div className="preview-window"><div className="preview-titlebar"><div className="traffic-lights"><i /><i /><i /></div><span>LiveStream Studio</span><span className="preview-local"><ShieldCheck size={11} /> On your computer</span></div>
-      <div className="preview-body"><aside className="preview-sidebar"><div className="preview-brand"><Mark /><span>LiveStream<small>STUDIO BY B2R</small></span></div><div className="preview-sidebar-label">YOUR WORKSPACE</div><span className="active"><Radio /> Overview</span><span><Layers /> Multi-stream</span><span><Repeat2 /> Playlists</span><span><FolderOpen /> Video library</span><span><CalendarClock /> Scheduler</span><div className="sidebar-bottom"><i /> Ready when you are</div></aside>
-      <div className="preview-content"><div className="preview-heading"><div><span>YOUR BROADCAST DESK</span><h3>Good content. On repeat.</h3></div><span className="preview-live-pill"><i />2 streams live</span></div>
-        <div className="preview-columns"><div className="preview-video"><div className="landscape"><div className="landscape-sun" /><div className="landscape-mountain mountain-back" /><div className="landscape-mountain mountain-front" /><span className="landscape-title">THE SLOW<br />MOMENTS.<small>A film for the in-between.</small></span><span className="video-live"><i /> LIVE</span><span className="video-time">00:42:18</span></div><div className="preview-video-footer"><span><i /> Golden hour sessions <small>PLAYLIST · LOOP 3</small></span><span className="equaliser"><i /><i /><i /><i /><i /></span></div></div>
-        <div className="preview-streams"><h4>ON AIR <span>2 destinations</span></h4><div><span className="stream-platform destination-youtube"><Play size={12} fill="currentColor" /></span><span>YouTube<small>Main channel</small></span><i /></div><div><span className="stream-platform destination-twitch">▣</span><span>Twitch<small>Community channel</small></span><i /></div><div className="stream-quality"><span>Output<small>1080p</small></span><span>Frame rate<small>30 fps</small></span></div><div className="signal-chart" aria-hidden="true">{[30,42,35,50,46,62,58,72,62,79,71,85,78,90,83,96,87,100,88,96,90,100].map((v,i)=><i key={i} style={{height:`${v}%`}} />)}</div><span className="sample-signal"><i />Sample output activity</span></div></div>
-        <div className="preview-bottom"><div><CalendarClock size={16} /><span>UP NEXT<small>Morning sessions · Tomorrow, 05:00</small></span></div><span>Scheduled <Check size={12} /></span></div>
-      </div></div>
-    </div><div className="showcase-note"><span><Check size={13} /> Playlists, scheduling and multi-stream, together.</span><span>Designed to stay out of your way.</span></div>
-  </div>;
+  return <figure className="studio-showcase real-studio-showcase">
+    <figcaption className="showcase-caption"><span><span className="live-dot" /> THE REAL LIVESTREAM STUDIO APP</span><span>MACOS · VERSION 1.0.10</span></figcaption>
+    <a className="real-app-frame" href="/screenshots/livestream-studio-dashboard.png" target="_blank" rel="noreferrer" aria-label="View the real LiveStream Studio dashboard screenshot at full size">
+      <img src="/screenshots/livestream-studio-dashboard.png" alt="Real LiveStream Studio 1.0.10 desktop app showing a local Golden Hour Sessions video, playlist selection and stream controls. Demo workspace with no active broadcast." width="2880" height="1684" decoding="async" />
+      <span className="screenshot-expand">View full size <ExternalLink size={13} /></span>
+    </a>
+    <div className="showcase-note"><span><Check size={13} /> Captured from the desktop app. Demo video; no live broadcast.</span><span>LiveStream Studio by B2R</span></div>
+  </figure>;
 }
 
 function Feature({ icon, title, text, label, className = '', children }: { icon: React.ReactNode; title: string; text: string; label: string; className?: string; children?: React.ReactNode }) {
