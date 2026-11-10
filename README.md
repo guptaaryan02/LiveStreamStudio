@@ -16,7 +16,7 @@ Keep the desktop app running for scheduled streams. Locking the screen is suppor
 
 ## Public website
 
-The landing page is hosted at [stream.b2r.it.com](http://stream.b2r.it.com/). Pushes to `main` build the Vite site and deploy `dist/` through the GitHub Pages workflow. The browser opens the landing page by default; the desktop app opens the studio.
+The landing page is hosted at [stream.b2r.it.com](https://stream.b2r.it.com/). Pushes to `main` build the Vite site and deploy `dist/` through the GitHub Pages workflow. The browser opens the landing page by default; the desktop app opens the studio.
 
 ## Development
 

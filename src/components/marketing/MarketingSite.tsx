@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Apple,
   BadgeCheck,
@@ -70,6 +70,7 @@ const goTo = (page: MarketingPage) => {
 };
 
 export const MarketingSite: React.FC = () => {
+  const scrollArea = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState<MarketingPage>(getPageFromHash);
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | null>(null);
 
@@ -79,6 +80,8 @@ export const MarketingSite: React.FC = () => {
     return () => window.removeEventListener('hashchange', updateRoute);
   }, []);
 
+  useEffect(() => { scrollArea.current?.scrollTo({ top: 0 }); }, [page]);
+
   const pageContent = useMemo(() => {
     if (page === 'download') return <DownloadPage onDownloaded={setSelectedPlatform} />;
     if (page === 'support') return <SupportPage selectedPlatform={selectedPlatform} />;
@@ -86,7 +89,7 @@ export const MarketingSite: React.FC = () => {
   }, [page, selectedPlatform]);
 
   return (
-    <div className="min-h-screen bg-[#0b1018] text-slate-100">
+    <div ref={scrollArea} className="h-screen overflow-y-auto bg-[#0b1018] text-slate-100">
       <header className="fixed inset-x-0 top-0 z-40 border-b border-white/10 bg-[#0b1018]/86 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <button onClick={() => goTo('home')} className="flex items-center gap-2 text-left">
