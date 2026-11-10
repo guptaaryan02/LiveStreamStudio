@@ -100,14 +100,16 @@ case "$os" in
     fi
     ;;
   Linux)
-    ARCHIVE="ffmpeg-master-latest-linux64-gpl.tar.xz"
+    ARCHIVE="${FFMPEG_LINUX_ARCHIVE:-ffmpeg-master-latest-linux64-gpl.tar.xz}"
     download "$BTBN_BASE/$ARCHIVE" "$WORK/$ARCHIVE"
+    verify_sha256 "$WORK/$ARCHIVE" "${FFMPEG_LINUX_SHA256:-}"
     SOURCE_URL="$BTBN_SOURCE"
     ( cd "$WORK" && tar -xJf "$ARCHIVE" )
     ;;
   MINGW*|MSYS*|CYGWIN*)
-    ARCHIVE="ffmpeg-master-latest-win64-gpl.zip"
+    ARCHIVE="${FFMPEG_WINDOWS_ARCHIVE:-ffmpeg-master-latest-win64-gpl.zip}"
     download "$BTBN_BASE/$ARCHIVE" "$WORK/$ARCHIVE"
+    verify_sha256 "$WORK/$ARCHIVE" "${FFMPEG_WINDOWS_SHA256:-}"
     SOURCE_URL="$BTBN_SOURCE"
     ( cd "$WORK" && unzip -qo "$ARCHIVE" )
     ;;

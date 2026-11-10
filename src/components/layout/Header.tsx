@@ -19,9 +19,7 @@ export const Header: React.FC = () => {
       {/* Brand Logo & Status */}
       <div className="flex items-center space-x-4">
         <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('dashboard')}>
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-red-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Radio className="w-6 h-6 text-studio-foreground animate-pulse" />
-          </div>
+          <img src="/brand/livestream-studio-mark.svg" alt="" className="w-10 h-10" />
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="text-lg font-bold text-studio-foreground tracking-tight leading-none">
@@ -31,7 +29,7 @@ export const Header: React.FC = () => {
                 v1.0.10
               </span>
             </div>
-            <p className="text-xs text-slate-400 leading-tight">One-Click FFmpeg Live Streaming</p>
+            <p className="text-xs text-slate-400 leading-tight">Live streaming by B2R</p>
           </div>
         </div>
 

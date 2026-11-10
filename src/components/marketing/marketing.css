@@ -16,3 +16,5 @@
 @media(prefers-reduced-motion:reduce){.b2r-site{scroll-behavior:auto}.b2r-site *{transition:none!important;animation:none!important}}
 
 .b2r-site .brand-png-link{margin-left:22px}
+
+.b2r-site .faq-list details p a{color:var(--blue);text-decoration:underline;text-underline-offset:3px}.b2r-site .button:disabled{opacity:.5;transform:none}.release-notes-body{max-width:780px;margin:42px auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.9;color:var(--muted);padding:30px;border:1px solid var(--line);border-radius:18px;background:var(--surface)}.release-notes-body h2{font-size:23px;margin-bottom:20px}.release-notes-body p{margin:14px 0}.centered-action{text-align:center;margin-top:30px}

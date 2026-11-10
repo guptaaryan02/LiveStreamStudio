@@ -1,6 +1,8 @@
 # LiveStream Studio 1.0.10
 
-November 6, 2026. Apple Silicon macOS.
+Initial Mac QA: November 6, 2026. Public Windows/Linux/macOS release preparation: November 10, 2026.
+
+The public packages also include the B2R logo, updated website and direct-download experience. The installer/hash evidence below describes the initial Mac-only build; use SHA256SUMS.txt on the public release for the newly packaged installers.
 
 ## Kanak Dhara sync investigation
 

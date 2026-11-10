@@ -29,7 +29,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
@@ -63,10 +63,19 @@ jobs:
       - name: Bundle FFmpeg
         shell: bash
         env:
-          FFMPEG_RELEASE: ${{ vars.FFMPEG_RELEASE || 'latest' }}
+          FFMPEG_RELEASE: autobuild-2026-11-10-12-39
+          FFMPEG_LINUX_ARCHIVE: ffmpeg-n8.1.3-34-ga35157abb9-linux64-gpl-8.1.tar.xz
+          FFMPEG_WINDOWS_ARCHIVE: ffmpeg-n8.1.3-34-ga35157abb9-win64-gpl-8.1.zip
+          FFMPEG_LINUX_SHA256: 123ea674afacb01aa0258153def409995f854af9a352eb14e1180745926f2d09
+          FFMPEG_WINDOWS_SHA256: 76b962e5cb4c0dbb0eb402766908fb3a2d8bb1d172e247cdf55fa90fd5f59636
         run: bash scripts/fetch-ffmpeg.sh
 
+      - name: Verify bundled broadcast tools
+        run: node scripts/verify-bundled-ffmpeg.mjs
+
       - name: Build the app
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: npm run tauri:build
 
       # Unsigned builds: macOS shows Gatekeeper's "damaged / unidentified
@@ -75,7 +84,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}
-          if-no-files-found: ignore
+          if-no-files-found: error
+          retention-days: 1
           path: |
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/msi/*.msi

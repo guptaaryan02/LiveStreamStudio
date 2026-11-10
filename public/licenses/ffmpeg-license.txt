@@ -1,0 +1,56 @@
+FFmpeg — license and source availability
+========================================
+
+LiveStream Studio bundles FFmpeg and ffprobe to encode and transmit video.
+These binaries are NOT part of LiveStream Studio; they are separate programs,
+executed as separate processes, and they carry their own license.
+
+License
+-------
+
+The bundled FFmpeg build is configured with --enable-gpl and includes
+GPL-licensed components (libx264, and where present libx265). It is therefore
+distributed under the GNU General Public License. The full license text and the
+component notices shipped by the build are in this same folder (LICENSE /
+COPYING files), alongside ffmpeg/PROVENANCE.txt, which records the exact build,
+its version string, its configuration flags and the SHA-256 of every binary
+shipped.
+
+Written offer for source code
+-----------------------------
+
+The GPL requires that anyone who receives these binaries can obtain the
+complete corresponding source code for them.
+
+    For a copy of the complete corresponding source code of the FFmpeg build
+    distributed with this application, contact:
+
+        <SUPPORT EMAIL — fill in before release>
+
+    The source will be provided for at least three years from the date you
+    received this software, on a medium customarily used for software
+    interchange, for no more than the cost of physically performing the
+    distribution. The exact upstream source for this build is recorded in
+    ffmpeg/PROVENANCE.txt.
+
+Before you ship, do these three things
+--------------------------------------
+
+1. Fill in the support contact above.
+2. Archive the exact FFmpeg source tarball matching the bundled binaries and
+   keep it retrievable for as long as you distribute this app, plus three
+   years. PROVENANCE.txt records which build that is.
+3. Confirm the LICENSE / COPYING files from the FFmpeg build are present in
+   this folder — scripts/fetch-ffmpeg.sh copies them automatically.
+
+Note on your own source code
+----------------------------
+
+LiveStream Studio invokes FFmpeg as a separate process and does not link
+against its libraries. That separation is what keeps this application's own
+source outside the scope of the GPL. If the app is ever changed to link
+FFmpeg's libraries directly (for example by embedding libavcodec), this
+analysis no longer holds and the licensing must be reconsidered.
+
+This file is a compliance aid, not legal advice. Have a lawyer review the
+arrangement before selling the product.
