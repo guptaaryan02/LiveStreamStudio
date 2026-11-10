@@ -1,6 +1,11 @@
 # LiveStream Studio
 
-A Tauri desktop app for playing local video playlists as live RTMP broadcasts to YouTube, Facebook, Twitch and custom destinations. Current source version: **1.0.10**.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="public/brand/livestream-studio-logo-inverse.svg">
+  <img src="public/brand/livestream-studio-logo.svg" alt="LiveStream Studio by B2R" width="400">
+</picture>
+
+A Tauri desktop app by B2R for playing local video playlists as live RTMP broadcasts to YouTube, Facebook, Twitch and custom destinations. Current source version: **1.0.10**.
 
 ## Features
 
@@ -17,6 +22,10 @@ Keep the desktop app running for scheduled streams. Locking the screen is suppor
 ## Public website
 
 The landing page is hosted at [stream.b2r.it.com](https://stream.b2r.it.com/). Pushes to `main` build the Vite site and deploy `dist/` through the GitHub Pages workflow. The browser opens the landing page by default; the desktop app opens the studio.
+
+## Brand assets
+
+The [logo kit](https://stream.b2r.it.com/#/brand) includes the continuous-play icon, outlined SVG wordmarks for light and dark backgrounds, and transparent PNG files. Assets are in `public/brand/`.
 
 ## Development
 
