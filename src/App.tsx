@@ -1,3 +1,6 @@
+import { deliverNotification, streamStatusNotice } from './services/desktopNotifications';
+import { classifyFFmpegLine } from './services/diagnostics';
+import { invoke } from '@tauri-apps/api/core';
 import React, { useEffect, useState } from 'react';
 import { useStudioStore } from './store/useStudioStore';
 import { Header } from './components/layout/Header';
@@ -31,7 +34,26 @@ const isStudioRoute = (hash: string) => {
 };
 
 export const App: React.FC = () => {
-  const { activeTab, tickTelemetry, checkSchedules, addLog, instances } = useStudioStore();
+  const { activeTab, tickTelemetry, checkSchedules, addLog, instances, schedules, profiles, settings } = useStudioStore();
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
+  useEffect(() => {
+    const media=window.matchMedia('(prefers-color-scheme: dark)');
+    const changed=()=>setSystemDark(media.matches);
+    media.addEventListener('change',changed);
+    return ()=>media.removeEventListener('change',changed);
+  },[]);
+  const resolvedTheme=settings.theme==='system' ? (systemDark ? 'dark' : 'light') : settings.theme;
+  const [notice, setNotice] = useState('');
+  useEffect(() => {
+    const handle = (event: Event) => setNotice((event as CustomEvent<string>).detail);
+    window.addEventListener('studio-notice', handle);
+    return () => window.removeEventListener('studio-notice', handle);
+  }, []);
+  useEffect(() => {
+    if (!notice) return;
+    const timer=setTimeout(()=>setNotice(''),6000);
+    return ()=>clearTimeout(timer);
+  },[notice]);
   const [hashRoute, setHashRoute] = useState(() => (typeof window === 'undefined' ? '' : window.location.hash));
   const showMarketingSite = !isTauriDesktop() && !isStudioRoute(hashRoute);
 
@@ -40,6 +62,32 @@ export const App: React.FC = () => {
     window.addEventListener('hashchange', updateRoute);
     return () => window.removeEventListener('hashchange', updateRoute);
   }, []);
+
+  useEffect(() => useStudioStore.subscribe((state, previous) => {
+    if (!state.settings.desktopNotifications) return;
+    for(const next of state.instances) {
+      const message=streamStatusNotice(previous.instances.find((i)=>i.id===next.id),next);
+      if(message) void deliverNotification(message.title,message.body).catch((error)=>console.warn('Desktop notification failed',error));
+    }
+  }),[]);
+
+  const shouldStayAwake = instances.some((i)=>['live','connecting','reconnecting'].includes(i.status)) ||
+    schedules.some((s)=>s.isActive && s.autoStart && !(s.scheduledAt && s.lastRunDate));
+  useEffect(() => {
+    if (!isTauriDesktop()) return;
+    let failed = false;
+    const protect = () => void invoke('set_keep_awake',{enabled:shouldStayAwake}).catch(() => {
+      if (!failed) {
+        failed = true;
+        window.dispatchEvent(new CustomEvent('studio-notice', {detail:'Sleep protection failed. Check Scheduler before leaving Studio unattended.'}));
+      }
+    });
+    protect();
+    // Recreate the assertion if its helper was terminated externally.
+    const timer = setInterval(protect, 30000);
+    return () => clearInterval(timer);
+  },[shouldStayAwake]);
+
   // Safety net: purge any library/playlist entry without a real disk path.
   // FFmpeg runs outside the webview, so blob: URLs can never be streamed.
   useEffect(() => {
@@ -66,6 +114,10 @@ export const App: React.FC = () => {
   // Telemetry loop running every 1 second for active stream telemetry
   useEffect(() => {
     if (showMarketingSite) return;
+    const resume = () => { checkSchedules(); void tickTelemetry(); };
+    window.addEventListener('focus', resume);
+    document.addEventListener('visibilitychange', resume);
+    checkSchedules();
     const interval = setInterval(() => {
       tickTelemetry();
       
@@ -73,7 +125,11 @@ export const App: React.FC = () => {
       // with a slight throttling or just let checkSchedules handle debouncing internally
       checkSchedules();
     }, 1000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', resume);
+      document.removeEventListener('visibilitychange', resume);
+    };
   }, [tickTelemetry, checkSchedules, showMarketingSite]);
 
   // Setup real-time FFmpeg logs.
@@ -92,9 +148,21 @@ export const App: React.FC = () => {
       else unlisteners.push(unlisten);
     };
 
-    import('./services/tauriEngine').then(async ({ setupFFmpegLogListener, setupFFmpegExitListener, setupPlayoutStatsListener }) => {
-      track(await setupFFmpegExitListener((streamId) => {
-        useStudioStore.getState().handleStreamExit(streamId);
+    import('./services/tauriEngine').then(async ({ setupFFmpegLogListener, setupFFmpegExitListener, setupPlayoutStatsListener, setupFFmpegRateListener, setupClipEncodedListener }) => {
+      track(await setupClipEncodedListener((streamId)=>{
+        const state=useStudioStore.getState();
+        if(state.instances.some((i)=>i.id===streamId && ['live','connecting'].includes(i.status))) {
+          useStudioStore.setState({analytics:{...state.analytics,totalVideosStreamed:state.analytics.totalVideosStreamed+1}});
+        }
+      }));
+      track(await setupFFmpegRateListener(({ streamId, fps, bitrateKbps }) => {
+        const state = useStudioStore.getState();
+        const inst = state.instances.find((i) => i.id === streamId);
+        state.updateInstanceMetrics(streamId, { fps: Number(fps.toFixed(1)), bitrateKbps: Number(bitrateKbps.toFixed(1)),
+          connectionQuality: bitrateKbps > 0 ? ((inst?.metrics.droppedFrames || 0) < 5 ? 'Excellent' : 'Fair') : 'Poor' });
+      }));
+      track(await setupFFmpegExitListener((streamId, success) => {
+        useStudioStore.getState().handleStreamExit(streamId,success);
       }));
 
       // Real "now playing" + upload-buffer level straight from the playout engine.
@@ -102,7 +170,7 @@ export const App: React.FC = () => {
         useStudioStore.setState((state) => ({
           instances: state.instances.map((i) =>
             i.id === stats.streamId
-              ? { ...i, currentVideoIndex: stats.clipIndex, bufferSeconds: stats.bufferSeconds }
+              ? { ...i, currentVideoIndex: stats.clipIndex, bufferSeconds: stats.bufferSeconds, pipelineId:stats.pipelineId, sharedDestinations:stats.sharedDestinations }
               : i
           ),
         }));
@@ -121,7 +189,8 @@ export const App: React.FC = () => {
           
           if (inst) {
             const metricsUpdate: Partial<any> = {};
-            if (fpsMatch) metricsUpdate.fps = parseFloat(fpsMatch[1]);
+            // Sender rate events report changes over wall-clock intervals;
+            // FFmpeg's cumulative averages would hide a stalled socket.
             
             let currentDrops = inst.metrics?.droppedFrames || 0;
             if (dropMatch) {
@@ -132,27 +201,16 @@ export const App: React.FC = () => {
             let currentBitrate = inst.metrics?.bitrateKbps || 0;
             if (bitrateMatch) {
               currentBitrate = parseFloat(bitrateMatch[1]);
-              metricsUpdate.bitrateKbps = currentBitrate;
+
             }
 
             if (speedMatch) {
-              metricsUpdate.uploadSpeedMbps = parseFloat(speedMatch[1]); // Reused for Encoding Speed
+              metricsUpdate.encodingSpeed = parseFloat(speedMatch[1]);
             }
 
-            // Connection Quality based on Drops & Bitrate
-            if (currentDrops === 0 && currentBitrate > 0) {
-              metricsUpdate.connectionQuality = 'Excellent';
-            } else if (currentDrops < 5 && currentBitrate > 0) {
-              metricsUpdate.connectionQuality = 'Good';
-            } else if (currentDrops >= 5 && currentDrops < 30) {
-              metricsUpdate.connectionQuality = 'Fair';
-            } else if (currentDrops >= 30 || currentBitrate === 0) {
-              metricsUpdate.connectionQuality = 'Poor';
-            }
-            
-            if (Object.keys(metricsUpdate).length > 0) {
-              state.updateInstanceMetrics(streamId, metricsUpdate);
-            }
+            // Frame cadence and upload rate jointly determine output health.
+            // A nonzero bitrate alone cannot certify smooth playback.
+            state.updateInstanceMetrics(streamId, metricsUpdate);
           }
         } else if (line.toLowerCase().includes('error') || line.toLowerCase().includes('reconnecting')) {
            // Catch severe network issues
@@ -165,8 +223,8 @@ export const App: React.FC = () => {
           id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
           streamId,
           streamName: inst ? inst.name : 'Unknown Stream',
-          timestamp: new Date().toISOString().split('T')[1].slice(0, 8),
-          level: line.toLowerCase().includes('error') ? 'ERROR' : (line.includes('frame=') ? 'INFO' : 'INFO'),
+          timestamp: new Date().toISOString(),
+          level: classifyFFmpegLine(line),
           message: line,
         });
       }));
@@ -208,9 +266,17 @@ export const App: React.FC = () => {
     showMarketingSite ? (
       <MarketingSite />
     ) : (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-studio-darker text-slate-100 font-sans">
+    <div data-theme={resolvedTheme} className="studio-theme flex flex-col h-screen w-screen overflow-hidden bg-studio-darker text-slate-100 font-sans">
+      {notice && <div role="status" className="fixed right-4 top-20 z-[100] max-w-md rounded-xl border border-indigo-400 bg-slate-900 p-4 text-sm text-slate-100 shadow-xl">
+        {notice}<button aria-label="Dismiss notification" onClick={() => setNotice('')} className="ml-3 text-slate-400">×</button>
+      </div>}
       {/* Top Header */}
       <Header />
+      {schedules.some((s) => s.isActive && s.autoStart && !profiles.find((p) => p.id === s.profileId)?.streamKey.trim()) &&
+        <div role="status" className="border-b border-amber-500/40 bg-studio-panel px-4 py-2 text-xs text-amber-400">
+          Scheduled streams need a key loaded for this session. Prepare keys before locking the screen; restarting Studio clears session keys.
+          <button onClick={() => useStudioStore.getState().setActiveTab('profiles')} className="ml-3 font-semibold underline">Prepare stream keys</button>
+        </div>}
 
       {/* Main Body */}
       <div className="flex flex-1 overflow-hidden">

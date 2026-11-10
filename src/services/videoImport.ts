@@ -140,7 +140,8 @@ const probeToImportedFile = async (
     resolution = resolution || info.resolution;
   }
 
-  return { path: localPath, sizeMb, duration, resolution, fps: metadata?.fps, metadata, previewUrl };
+  if (!resolution) throw new Error(`Could not read a playable video at ${localPath}`);
+  return { path: localPath, sizeMb: sizeMb ?? (metadata as any)?.size_mb ?? 0, duration, resolution, fps: metadata?.fps, metadata, previewUrl };
 };
 
 const pickViaTauri = async (): Promise<ImportedFile[]> => {
@@ -242,8 +243,7 @@ export const importFromPaths = async (
 
   const files = await mapWithConcurrency(usable, 8, async (path) => {
     if (convertFileSrc) return probeToImportedFile(path, convertFileSrc(path));
-    const info = await readMediaInfo(previewUrlForPath(path));
-    return { path, duration: info.duration, resolution: info.resolution } as ImportedFile;
+    return probeToImportedFile(path, previewUrlForPath(path));
   });
 
   return { videos: files.map((f, i) => toVideoItem(f, category, i)) };

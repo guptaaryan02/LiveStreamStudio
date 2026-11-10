@@ -1,14 +1,39 @@
+import { notificationPermission, deliverNotification, type NotificationPermission } from '../../services/desktopNotifications';
 import React, { useEffect, useState } from 'react';
 import { useStudioStore } from '../../store/useStudioStore';
 import { Settings as SettingsIcon, Zap, ShieldCheck, Moon, Terminal, Save, Key, CheckCircle2 } from 'lucide-react';
 import { HardwareAcceleration } from '../../types';
-import { FFmpegInfo, getFFmpegInfo, selectCustomFFmpegBinary } from '../../services/tauriEngine';
+import { FFmpegInfo, isTauriEnvironment, getFFmpegInfo, selectCustomFFmpegBinary } from '../../services/tauriEngine';
 
 export const SettingsView: React.FC = () => {
   const { settings, updateSettings } = useStudioStore();
   const [ffmpegInfo, setFfmpegInfo] = useState<FFmpegInfo | null>(null);
   const [checkingFfmpeg, setCheckingFfmpeg] = useState(false);
   const [updateMessage, setUpdateMessage] = useState('');
+  const [notificationStatus,setNotificationStatus]=useState<NotificationPermission>('default');
+  const [notificationMessage,setNotificationMessage]=useState('');
+  const [notificationBusy,setNotificationBusy]=useState(false);
+  useEffect(()=>{void notificationPermission().then((permission)=>{setNotificationStatus(permission);if(permission!=='granted') updateSettings({desktopNotifications:false});}).catch(()=>setNotificationMessage('Could not read notification permission.'));},[]);
+  const configureNotifications=async (enabled:boolean)=>{
+    if(!enabled) {updateSettings({desktopNotifications:false});return;}
+    setNotificationBusy(true);
+    try {
+      const permission=await notificationPermission(true); setNotificationStatus(permission);
+      updateSettings({desktopNotifications:permission==='granted'});
+      setNotificationMessage(permission==='granted' ? 'Stream alerts are enabled.' : 'Notifications are blocked. Allow them in system or browser notification settings, then enable again.');
+    } catch(error) {updateSettings({desktopNotifications:false});setNotificationMessage(`Could not enable notifications: ${String(error)}`);}
+    finally {setNotificationBusy(false);}
+  };
+  const testNotification=async()=>{
+    setNotificationBusy(true);
+    try {
+      const permission=await notificationPermission(true); setNotificationStatus(permission);
+      if(permission!=='granted') {setNotificationMessage('Notification permission was not granted. Check system or browser settings.');return;}
+      const sent=await deliverNotification('LiveStream Studio','Test notification: stream alerts are working.');
+      setNotificationMessage(sent ? 'Test notification sent. Check Notification Center; Focus mode may silence the banner.' : 'Notification was not sent.');
+    } catch(error) {setNotificationMessage(`Notification failed: ${String(error)}`);}
+    finally {setNotificationBusy(false);}
+  };
 
   const displayVersion = ffmpegInfo?.version.match(/ffmpeg version\s+([^\s]+)/i)?.[1] || ffmpegInfo?.version || 'Unknown';
 
@@ -44,7 +69,7 @@ export const SettingsView: React.FC = () => {
     <div className="p-6 space-y-6 h-full overflow-y-auto pb-20">
       {/* Header */}
       <div className="border-b border-slate-800 pb-4">
-        <h2 className="text-xl font-bold text-white tracking-tight flex items-center space-x-2">
+        <h2 className="text-xl font-bold text-studio-foreground tracking-tight flex items-center space-x-2">
           <SettingsIcon className="w-6 h-6 text-indigo-400" />
           <span>Application & Engine Settings</span>
         </h2>
@@ -53,10 +78,17 @@ export const SettingsView: React.FC = () => {
         </p>
       </div>
 
+      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+        <label className="text-sm font-semibold text-studio-foreground" htmlFor="studio-theme">Appearance</label>
+        <select id="studio-theme" value={settings.theme} onChange={(e)=>updateSettings({theme:e.target.value as 'dark'|'light'|'system'})} className="ml-4 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+          <option value="dark">Dark</option><option value="light">Light</option><option value="system">Follow system</option>
+        </select>
+      </div>
+      <label className="flex items-center gap-3 text-sm text-slate-300"><input type="checkbox" checked={settings.pausePreviewByDefault!==false} onChange={(e)=>updateSettings({pausePreviewByDefault:e.target.checked})}/>Start local video preview paused to save resources</label>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Module 14: Hardware Acceleration & FFmpeg Settings */}
         <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
-          <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+          <h3 className="text-sm font-bold text-studio-foreground flex items-center space-x-2">
             <Zap className="w-4 h-4 text-amber-400" />
             <span>FFmpeg Hardware Acceleration & Binary</span>
           </h3>
@@ -126,6 +158,18 @@ export const SettingsView: React.FC = () => {
                 Bundled FFmpeg is used by default. Custom builds are for advanced encoder or codec setups.
               </p>
               {updateMessage && <p className="text-[10px] text-emerald-400">{updateMessage}</p>}
+              <p className="text-[11px] text-slate-400">Auto uses software CBR to maintain the target during static scenes. GPU encoders can use less CPU, but their bitrate may fall below the target on logos or still pictures.</p>
+              {isTauriEnvironment() && <label className="flex items-start gap-3 cursor-pointer border-t border-slate-800 pt-3">
+                <input type="checkbox" checked={settings.sharedEncodingEnabled!==false} onChange={(e)=>updateSettings({sharedEncodingEnabled:e.target.checked})}/>
+                <span><span className="font-semibold text-slate-200">Share encoding for matching streams</span><span className="block text-xs text-slate-400 mt-1">New destinations with the same ordered playlist and output settings join the current playback. Turn off to start each destination from the beginning. Applies to newly started streams. Upload bandwidth is still required for every destination.</span></span>
+              </label>}
+              <label className="flex items-start gap-3 cursor-pointer border-t border-slate-800 pt-3">
+                <input type="checkbox" checked={settings.useSourceBitrate === true}
+                  onChange={(e) => updateSettings({ useSourceBitrate: e.target.checked })} />
+                <span><span className="font-semibold text-slate-200">Use source bitrate (fast passthrough)</span>
+                  <span className="block text-[11px] text-slate-400 mt-1">Off by default. Constant-bitrate encoding keeps static clips and logos near your selected output rate. Passthrough saves CPU but ignores the target bitrate for matching files.</span>
+                </span>
+              </label>
             </div>
 
             <div>
@@ -134,7 +178,7 @@ export const SettingsView: React.FC = () => {
                 type="number"
                 value={settings.defaultBitrateKbps}
                 onChange={(e) => updateSettings({ defaultBitrateKbps: parseInt(e.target.value) || 4500 })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 font-mono text-white focus:outline-none"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 font-mono text-studio-foreground focus:outline-none"
               />
             </div>
           </div>
@@ -142,7 +186,7 @@ export const SettingsView: React.FC = () => {
 
         {/* Module 10: Auto Recovery Engine Settings */}
         <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
-          <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+          <h3 className="text-sm font-bold text-studio-foreground flex items-center space-x-2">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <span>Auto Recovery & Network Resiliency</span>
           </h3>
@@ -170,7 +214,7 @@ export const SettingsView: React.FC = () => {
                   type="number"
                   value={settings.retryIntervalSeconds}
                   onChange={(e) => updateSettings({ retryIntervalSeconds: parseInt(e.target.value) || 3 })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 font-mono text-white focus:outline-none"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 font-mono text-studio-foreground focus:outline-none"
                 />
               </div>
 
@@ -180,7 +224,7 @@ export const SettingsView: React.FC = () => {
                   type="number"
                   value={settings.maxRetryCount}
                   onChange={(e) => updateSettings({ maxRetryCount: parseInt(e.target.value) || 5 })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 font-mono text-white focus:outline-none"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 font-mono text-studio-foreground focus:outline-none"
                 />
               </div>
             </div>
@@ -190,11 +234,15 @@ export const SettingsView: React.FC = () => {
                 <input
                   type="checkbox"
                   checked={settings.desktopNotifications}
-                  onChange={(e) => updateSettings({ desktopNotifications: e.target.checked })}
+                  disabled={notificationBusy}
+                  onChange={(e) => {void configureNotifications(e.target.checked);}}
                   className="w-4 h-4 rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-0"
                 />
                 <span className="font-semibold text-slate-200">Desktop Push Notifications</span>
               </label>
+              <p className="mt-2 text-xs text-slate-400">Alerts for live output, disconnects, errors and stopped streams. Permission: {notificationStatus}.</p>
+              <button type="button" disabled={notificationBusy} onClick={()=>{void testNotification();}} className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-xs text-white disabled:opacity-50">Test notification</button>
+              {notificationMessage && <p role="status" className="mt-2 text-xs text-slate-300">{notificationMessage}</p>}
             </div>
           </div>
         </div>

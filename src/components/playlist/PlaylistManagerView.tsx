@@ -1,3 +1,7 @@
+import { isTauriEnvironment } from '../../services/tauriEngine';
+import { prepareStreamCopy, cancelStreamCopy } from '../../services/preparedMedia';
+import { copyText } from '../../services/uiFeedback';
+import { notify } from '../../services/uiFeedback';
 import React, { useState, useEffect, useRef } from 'react';
 import { useStudioStore } from '../../store/useStudioStore';
 import {
@@ -58,6 +62,30 @@ export const PlaylistManagerView: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
+  const [preparing,setPreparing]=useState(false);
+  const [preparationLabel,setPreparationLabel]=useState('');
+  const [preparationProgress,setPreparationProgress]=useState(0);
+  const cancelled=useRef(false);const preparationJob=useRef('');
+  useEffect(()=>()=>{cancelled.current=true;if(preparationJob.current)void cancelStreamCopy(preparationJob.current);},[]);
+  const prepare1080=async()=>{
+    if(!activePlaylist?.videos.length) return;
+    const source=activePlaylist;cancelled.current=false;setPreparing(true);setPreparationProgress(0);setImportError('');
+    const ids:string[]=[];
+    try {
+      for(let index=0;index<source.videos.length;index++) {
+        if(cancelled.current) break;
+        setPreparationLabel(`${index+1} / ${source.videos.length}: ${source.videos[index].title}`);
+        preparationJob.current=`prepare-${Date.now()}-${index}`;
+        const copy=await prepareStreamCopy(source.videos[index],preparationJob.current,(percent)=>setPreparationProgress((index+percent/100)/source.videos.length*100));
+        if(cancelled.current) break;
+        const existing=useStudioStore.getState().videos.find((v)=>v.localPath===copy.localPath && v.streamReadyProfile?.version===1);
+        if(existing)ids.push(existing.id);else{addVideoToLibrary(copy);ids.push(copy.id);}
+      }
+      if(!cancelled.current){const ready=createPlaylist(`${source.name} · 1080p Ready`,ids);updatePlaylist(ready.id,{repeatCount:source.repeatCount,isInfiniteLoop:source.isInfiniteLoop,shuffle:source.shuffle,order:source.order});notify('1080p streaming playlist ready. With 1080p, 30 FPS and 4500 Kbps output, it streams without live encoding.');}
+    } catch(error){if(!cancelled.current)setImportError(String(error));}
+    finally {preparationJob.current='';setPreparing(false);}
+  };
+  const cancelPreparation=()=>{cancelled.current=true;if(preparationJob.current)void cancelStreamCopy(preparationJob.current);setPreparationLabel('Cancelling preparation…');};
 
   const activePlaylist = playlists.find((p) => p.id === activePlaylistId) || playlists[0];
 
@@ -205,7 +233,7 @@ export const PlaylistManagerView: React.FC = () => {
 
   const handleQuickGoLive = () => {
     if (!activePlaylist || activePlaylist.videos.length === 0) {
-      alert('Please add at least one video to the playlist before going live!');
+      notify('Please add at least one video to the playlist before going live!');
       return;
     }
 
@@ -218,7 +246,7 @@ export const PlaylistManagerView: React.FC = () => {
       profiles.find((p) => p.streamKey?.trim());
 
     if (!source) {
-      alert('No stream key configured yet. Set your platform and stream key on the Stream Dashboard, then go live from there.');
+      notify('No stream key configured yet. Set your platform and stream key on the Stream Dashboard, then go live from there.');
       setActiveTab('dashboard');
       return;
     }
@@ -245,19 +273,21 @@ export const PlaylistManagerView: React.FC = () => {
         </div>
       )}
 
+      {preparing && <div role="dialog" aria-modal="true" aria-label="Preparing 1080p streaming copies" className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/80 p-6"><div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 space-y-4"><h3 className="font-bold text-studio-foreground">Preparing 1080p streaming copies</h3><p className="text-sm text-slate-300">{preparationLabel}</p><progress aria-label="Video preparation progress" max={100} value={preparationProgress} className="w-full"/><p className="text-xs text-slate-400">{preparationProgress.toFixed(0)}% · One video at a time to limit memory use. Your originals stay unchanged. Copies use additional disk space.</p><button onClick={cancelPreparation} className="rounded-lg bg-slate-800 px-4 py-2 text-slate-200">Cancel preparation</button></div></div>}
       {/* Top Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-tight flex items-center space-x-2">
+          <h2 className="text-xl font-bold text-studio-foreground tracking-tight flex items-center space-x-2">
             <ListVideo className="w-6 h-6 text-indigo-400" />
             <span>Playlist Manager</span>
           </h2>
           <p className="text-xs text-slate-400">
-            Add videos, reorder playlist sequence, and configure repeat/infinite loop rules.
+            Add videos, reorder playlist sequence, and configure repeat/infinite loop rules. For several different streams on a low-memory laptop, prepare 1080p copies before scheduling.
           </p>
         </div>
 
         <div className="flex items-center space-x-3">
+          {isTauriEnvironment() && <button disabled={preparing || !activePlaylist?.videos.length || activePlaylist.videos.every((v)=>v.streamReadyProfile?.version===1)} onClick={()=>{void prepare1080();}} className="rounded-xl border border-emerald-600 px-3 py-2 text-xs font-semibold text-emerald-400 disabled:opacity-50">Prepare 1080p copy</button>}
           <button
             onClick={() => setShowCreateModal(true)}
             className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs px-4 py-2.5 rounded-xl transition shadow-lg shadow-indigo-600/20"
@@ -286,10 +316,12 @@ export const PlaylistManagerView: React.FC = () => {
               return (
                 <div
                   key={pl.id}
+                  role="button" tabIndex={0} aria-label={`Select playlist ${pl.name}`}
+                  onKeyDown={(e)=>{if(e.key==='Enter' || e.key===' '){e.preventDefault();setActivePlaylistId(pl.id);}}}
                   onClick={() => setActivePlaylistId(pl.id)}
                   className={`p-3.5 rounded-xl border cursor-pointer transition flex items-center justify-between ${
                     isSelected
-                      ? 'bg-indigo-600/20 border-indigo-500/60 text-white shadow-md'
+                      ? 'bg-indigo-600/20 border-indigo-500/60 text-studio-foreground shadow-md'
                       : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-800/60'
                   }`}
                 >
@@ -319,7 +351,7 @@ export const PlaylistManagerView: React.FC = () => {
                   type="text"
                   value={activePlaylist.name}
                   onChange={(e) => updatePlaylist(activePlaylist.id, { name: e.target.value })}
-                  className="bg-transparent text-lg font-bold text-white border-b border-transparent hover:border-slate-700 focus:border-indigo-500 focus:outline-none px-1 py-0.5"
+                  className="bg-transparent text-lg font-bold text-studio-foreground border-b border-transparent hover:border-slate-700 focus:border-indigo-500 focus:outline-none px-1 py-0.5"
                 />
                 <div className="flex items-center space-x-4 text-xs font-mono text-slate-400 mt-1 px-1">
                   <span className="flex items-center space-x-1">
@@ -338,7 +370,7 @@ export const PlaylistManagerView: React.FC = () => {
               <div className="flex items-center space-x-2">
                 <button
                   onClick={handleDuplicatePlaylist}
-                  className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition"
+                  className="p-2 text-slate-300 hover:text-studio-foreground bg-slate-800 hover:bg-slate-700 rounded-lg transition"
                   title="Duplicate Playlist"
                 >
                   <Copy className="w-4 h-4" />
@@ -372,7 +404,7 @@ export const PlaylistManagerView: React.FC = () => {
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
                   <label className="text-slate-300 font-semibold block">Repeat Count</label>
                   <button
-                    onClick={() => updatePlaylist(activePlaylist.id, { isInfiniteLoop: true, repeatCount: -1 })}
+                    onClick={() => updatePlaylist(activePlaylist.id, { isInfiniteLoop: !activePlaylist.isInfiniteLoop, repeatCount: activePlaylist.isInfiniteLoop ? 1 : -1 })}
                     className={`w-full py-2 rounded-lg font-medium text-xs border transition ${
                       activePlaylist.isInfiniteLoop
                         ? 'bg-indigo-600 text-white border-indigo-400'
@@ -523,19 +555,22 @@ export const PlaylistManagerView: React.FC = () => {
                       <div className="flex items-center space-x-1">
                         <button
                           disabled={idx === 0}
+                          aria-label={`Move ${vid.title} up`}
                           onClick={() => reorderPlaylistVideos(activePlaylist.id, idx, idx - 1)}
-                          className="p-1.5 text-slate-400 hover:text-white disabled:opacity-30 rounded hover:bg-slate-800"
+                          className="p-1.5 text-slate-400 hover:text-studio-foreground disabled:opacity-30 rounded hover:bg-slate-800"
                         >
                           <MoveUp className="w-3.5 h-3.5" />
                         </button>
                         <button
                           disabled={idx === activePlaylist.videos.length - 1}
+                          aria-label={`Move ${vid.title} down`}
                           onClick={() => reorderPlaylistVideos(activePlaylist.id, idx, idx + 1)}
-                          className="p-1.5 text-slate-400 hover:text-white disabled:opacity-30 rounded hover:bg-slate-800"
+                          className="p-1.5 text-slate-400 hover:text-studio-foreground disabled:opacity-30 rounded hover:bg-slate-800"
                         >
                           <MoveDown className="w-3.5 h-3.5" />
                         </button>
                         <button
+                          aria-label={`Remove ${vid.title} from playlist`}
                           onClick={() => removeVideoFromPlaylist(activePlaylist.id, idx)}
                           className="p-1.5 text-red-400 hover:bg-red-950/40 rounded transition"
                         >
@@ -556,13 +591,13 @@ export const PlaylistManagerView: React.FC = () => {
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-2xl space-y-4 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center space-x-2">
+              <h3 className="text-base font-bold text-studio-foreground flex items-center space-x-2">
                 <FileVideo className="w-5 h-5 text-indigo-400" />
                 <span>Select Videos from Library</span>
               </h3>
               <button
                 onClick={() => setShowLibraryPickerModal(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-studio-foreground"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -589,7 +624,7 @@ export const PlaylistManagerView: React.FC = () => {
                       )}
                       <video src={vid.filePath} className="w-14 h-9 rounded object-cover bg-black" muted />
                       <div>
-                        <div className="text-xs font-semibold text-white">{vid.title}</div>
+                        <div className="text-xs font-semibold text-studio-foreground">{vid.title}</div>
                         <div className="text-[10px] font-mono text-slate-400">
                           {formatDuration(vid.duration)} • {vid.resolution} • {vid.category}
                         </div>
@@ -628,7 +663,7 @@ export const PlaylistManagerView: React.FC = () => {
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md space-y-4">
-            <h3 className="text-base font-bold text-white">Create New Video Playlist</h3>
+            <h3 className="text-base font-bold text-studio-foreground">Create New Video Playlist</h3>
             <form onSubmit={handleCreateNew} className="space-y-4">
               <div>
                 <label className="block text-xs text-slate-300 mb-1">Playlist Title</label>
@@ -638,7 +673,7 @@ export const PlaylistManagerView: React.FC = () => {
                   value={newPlaylistName}
                   onChange={(e) => setNewPlaylistName(e.target.value)}
                   placeholder="e.g. Evening Bhajan Stream 24/7"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-studio-foreground focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -667,13 +702,13 @@ export const PlaylistManagerView: React.FC = () => {
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-xl space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+              <h3 className="text-sm font-bold text-studio-foreground flex items-center space-x-2">
                 <FileText className="w-4 h-4 text-indigo-400" />
                 <span>Generated FFmpeg playlist.txt</span>
               </h3>
               <button
                 onClick={() => setShowExportModal(false)}
-                className="text-xs text-slate-400 hover:text-white"
+                className="text-xs text-slate-400 hover:text-studio-foreground"
               >
                 Close
               </button>
@@ -692,8 +727,7 @@ export const PlaylistManagerView: React.FC = () => {
               </span>
               <button
                 onClick={() => {
-                  navigator.clipboard.writeText(exportedText);
-                  alert('Copied playlist.txt to clipboard!');
+                  void copyText(exportedText, 'Copied playlist.txt to clipboard!');
                 }}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg"
               >

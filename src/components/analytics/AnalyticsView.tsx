@@ -1,88 +1,30 @@
 import React from 'react';
 import { useStudioStore } from '../../store/useStudioStore';
-import { BarChart3, Clock, Radio, ShieldCheck, Film, Zap, Activity } from 'lucide-react';
-
-export const AnalyticsView: React.FC = () => {
-  const { analytics } = useStudioStore();
-
-  return (
-    <div className="p-6 space-y-6 h-full overflow-y-auto pb-20">
-      {/* Header */}
-      <div className="border-b border-slate-800 pb-4">
-        <h2 className="text-xl font-bold text-white tracking-tight flex items-center space-x-2">
-          <BarChart3 className="w-6 h-6 text-indigo-400" />
-          <span>Stream Statistics & Performance</span>
-        </h2>
-        <p className="text-xs text-slate-400">
-          Historical telemetry analytics for 24/7 stream uptime, bitrate consistency, and recovery metrics.
-        </p>
-      </div>
-
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-2">
-          <div className="flex items-center justify-between text-slate-400 text-xs">
-            <span>Total Hours Streamed</span>
-            <Clock className="w-4 h-4 text-amber-400" />
-          </div>
-          <div className="text-2xl font-bold text-white font-mono">{analytics.totalHoursStreamed.toFixed(1)} hrs</div>
-          <div className="text-[11px] text-emerald-400 font-mono">+12.4 hrs this week</div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-2">
-          <div className="flex items-center justify-between text-slate-400 text-xs">
-            <span>Stream Stability Rating</span>
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className="text-2xl font-bold text-emerald-400 font-mono">{analytics.streamStabilityPercent}%</div>
-          <div className="text-[11px] text-slate-400 font-mono">{analytics.successfulReconnections} Auto-Recoveries</div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-2">
-          <div className="flex items-center justify-between text-slate-400 text-xs">
-            <span>Average Encoding Bitrate</span>
-            <Activity className="w-4 h-4 text-indigo-400" />
-          </div>
-          <div className="text-2xl font-bold text-indigo-300 font-mono">
-            {(analytics.averageBitrateKbps / 1000).toFixed(2)} Mbps
-          </div>
-          <div className="text-[11px] text-indigo-400 font-mono">1080p60 H.264 Target</div>
-        </div>
-      </div>
-
-      {/* Visual Bar Chart Card */}
-      <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-6">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-white">Daily Stream Hours (Past 7 Days)</h3>
-          <span className="text-xs font-mono text-slate-400">Total Videos Streamed: {analytics.totalVideosStreamed}</span>
-        </div>
-
-        {/* Bar chart representation */}
-        <div className="flex items-end justify-between h-48 pt-6 px-4 border-b border-slate-800 gap-4">
-          {[
-            { day: 'Mon', hours: 24.0, pct: '100%' },
-            { day: 'Tue', hours: 24.0, pct: '100%' },
-            { day: 'Wed', hours: 22.5, pct: '94%' },
-            { day: 'Thu', hours: 24.0, pct: '100%' },
-            { day: 'Fri', hours: 24.0, pct: '100%' },
-            { day: 'Sat', hours: 24.0, pct: '100%' },
-            { day: 'Sun', hours: 24.0, pct: '100%' },
-          ].map((bar, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center space-y-2 group">
-              <span className="text-[10px] font-mono text-indigo-300 opacity-0 group-hover:opacity-100 transition">
-                {bar.hours}h
-              </span>
-              <div className="w-full bg-slate-950 rounded-t-xl overflow-hidden h-36 flex items-end">
-                <div
-                  className="w-full bg-gradient-to-t from-indigo-600 via-indigo-500 to-emerald-400 rounded-t-xl group-hover:brightness-125 transition"
-                  style={{ height: bar.pct }}
-                />
-              </div>
-              <span className="text-xs font-mono text-slate-400">{bar.day}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+import { BarChart3 } from 'lucide-react';
+import { lastSevenDays } from '../../services/analytics';
+export const AnalyticsView:React.FC=()=>{
+  const {analytics}=useStudioStore();
+  const days=lastSevenDays(analytics);
+  const scale=Math.max(1,...days.map(d=>d.hours));
+  const weekHours=days.reduce((sum,d)=>sum+d.hours,0);
+  const cards=[
+    ['Recorded output hours',`${analytics.totalHoursStreamed.toFixed(3)} hrs`,`${weekHours.toFixed(3)} hrs in the past 7 days`],
+    ['Output availability',analytics.totalObservedSeconds ? `${analytics.streamStabilityPercent.toFixed(1)}%` : 'No observations',`${analytics.successfulReconnections} successful recoveries`],
+    ['Average output bitrate',analytics.totalLiveSeconds ? `${(analytics.averageBitrateKbps/1000).toFixed(2)} Mbps` : 'No output samples',`${analytics.totalStreamsRun} streams reached live output`],
+  ];
+  return <div className="p-6 space-y-6 h-full overflow-y-auto pb-20">
+    <div className="border-b border-slate-800 pb-4">
+      <h2 className="text-xl font-bold text-studio-foreground flex items-center gap-2"><BarChart3 className="w-6 h-6 text-indigo-400"/>Stream Statistics & Performance</h2>
+      <p className="text-xs text-slate-400 mt-2">Recorded on this device from encoder output. Concurrent destinations add their hours together. Viewer analytics are not included.</p>
     </div>
-  );
+    {analytics.totalObservedSeconds===0 && <p className="rounded-xl border border-slate-800 bg-slate-900 p-4 text-sm text-slate-300">No streaming activity recorded yet. Statistics appear when the encoder reports output. Earlier sample statistics were removed.</p>}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">{cards.map(([title,value,detail])=><div key={title} className="rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-2"><h3 className="text-xs text-slate-400">{title}</h3><div className="text-2xl font-mono font-bold text-studio-foreground">{value}</div><p className="text-xs text-slate-400">{detail}</p></div>)}</div>
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 space-y-5">
+      <h3 className="font-bold text-studio-foreground">Daily output hours · past 7 days</h3>
+      <div className="flex items-end gap-4 h-56" role="img" aria-label={`Recorded output over seven days: ${weekHours.toFixed(3)} destination-hours`}>
+        {days.map(day=><div key={day.key} className="flex-1 h-full flex flex-col items-center gap-2"><span className="text-xs font-mono text-slate-300">{day.hours.toFixed(3)}h</span><div className="w-full flex-1 bg-slate-950 rounded-t-lg flex items-end"><div className="w-full bg-indigo-500 rounded-t-lg" style={{height:`${day.hours/scale*100}%`}}/></div><span className="text-xs text-slate-400">{day.label}</span></div>)}
+      </div>
+      <p className="text-xs text-slate-400">{analytics.totalVideosStreamed} clips encoded. Availability is the share of observed active time with fresh, nonzero encoder output. Sleep gaps are excluded; statistics are saved locally.</p>
+    </div>
+  </div>;
 };

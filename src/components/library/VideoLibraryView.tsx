@@ -1,6 +1,7 @@
+import { notify } from '../../services/uiFeedback';
 import React, { useState } from 'react';
 import { useStudioStore } from '../../store/useStudioStore';
-import { pickVideoFiles, isStreamablePath, previewUrlForPath } from '../../services/videoImport';
+import { pickVideoFiles, isStreamablePath, importFromPaths } from '../../services/videoImport';
 import {
   FileVideo,
   Plus,
@@ -62,7 +63,7 @@ export const VideoLibraryView: React.FC = () => {
     }
   };
 
-  const handleAddVideoSubmit = (e: React.FormEvent) => {
+  const handleAddVideoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
@@ -76,21 +77,16 @@ export const VideoLibraryView: React.FC = () => {
       return;
     }
 
-    const isRemote = /^https?:\/\//i.test(trimmedPath);
-    const newVideo: VideoItem = {
-      id: `vid-${Date.now()}`,
-      title: newTitle,
-      category: newCategory,
-      duration: 0,
-      resolution: 'Unknown',
-      sizeMb: 0,
-      thumbnail: 'https://images.unsplash.com/photo-1609102026400-3d026938a161?w=600&auto=format&fit=crop&q=80',
-      filePath: isRemote ? trimmedPath : previewUrlForPath(trimmedPath),
-      localPath: trimmedPath,
-      fps: 30,
-    };
-
-    addVideo(newVideo);
+    if (!/^(?:\/|[a-zA-Z]:[\\/])/.test(trimmedPath)) {
+      setImportError('Enter an absolute local file path.'); return;
+    }
+    setImporting(true);
+    try {
+      const result = await importFromPaths([trimmedPath], newCategory);
+      if (result.error || !result.videos.length) { setImportError(result.error || 'Video could not be imported'); return; }
+      addVideo({ ...result.videos[0], title: newTitle.trim() });
+    } catch (error) { setImportError(String(error)); return; }
+    finally { setImporting(false); }
     setShowAddModal(false);
     setNewTitle('');
     setNewPath('');
@@ -108,7 +104,7 @@ export const VideoLibraryView: React.FC = () => {
       {/* Top Bar */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-tight flex items-center space-x-2">
+          <h2 className="text-xl font-bold text-studio-foreground tracking-tight flex items-center space-x-2">
             <FileVideo className="w-6 h-6 text-indigo-400" />
             <span>Video Library & Folders</span>
           </h2>
@@ -176,7 +172,7 @@ export const VideoLibraryView: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search videos..."
-            className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+            className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-studio-foreground placeholder-slate-500 focus:outline-none focus:border-indigo-500"
           />
         </div>
       </div>
@@ -202,7 +198,7 @@ export const VideoLibraryView: React.FC = () => {
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent opacity-60 pointer-events-none" />
 
-                <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] font-mono text-white pointer-events-none">
+                <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] font-mono text-studio-foreground pointer-events-none">
                   <span className="bg-slate-950/80 px-2 py-0.5 rounded border border-slate-800">
                     {formatDuration(video.duration)}
                   </span>
@@ -240,7 +236,7 @@ export const VideoLibraryView: React.FC = () => {
                   onClick={() => {
                     if (activePlaylistId) {
                       addVideoToPlaylist(activePlaylistId, video.id);
-                      alert(`Added "${video.title}" to active playlist!`);
+                      notify(`Added "${video.title}" to active playlist!`);
                     } else {
                       setActiveTab('playlist');
                     }
@@ -253,6 +249,7 @@ export const VideoLibraryView: React.FC = () => {
                 </button>
 
                 <button
+                  aria-label={`Remove ${video.title} from library`}
                   onClick={() => removeVideo(video.id)}
                   className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded-lg transition"
                 >
@@ -268,7 +265,7 @@ export const VideoLibraryView: React.FC = () => {
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md space-y-4">
-            <h3 className="text-base font-bold text-white">Add Video by Disk Path</h3>
+            <h3 className="text-base font-bold text-studio-foreground">Add Video by Disk Path</h3>
             <form onSubmit={handleAddVideoSubmit} className="space-y-3 text-xs">
               <div>
                 <label className="block text-slate-300 mb-1">Video Title</label>
@@ -278,7 +275,7 @@ export const VideoLibraryView: React.FC = () => {
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   placeholder="e.g. My Channel Intro 1080p"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-studio-foreground focus:outline-none"
                 />
               </div>
 
@@ -287,7 +284,7 @@ export const VideoLibraryView: React.FC = () => {
                 <select
                   value={newCategory}
                   onChange={(e) => setNewCategory(e.target.value as VideoCategory)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-studio-foreground focus:outline-none"
                 >
                   {categories.filter((c) => c !== 'All').map((c) => (
                     <option key={c} value={c}>{c}</option>
@@ -296,13 +293,13 @@ export const VideoLibraryView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1">Exact Local Path / URL</label>
+                <label className="block text-slate-300 mb-1">Exact Local Path</label>
                 <input
                   type="text"
                   value={newPath}
                   onChange={(e) => setNewPath(e.target.value)}
                   placeholder="/Users/kesharwanidurgesh/Movies/stream.mp4"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono focus:outline-none"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-studio-foreground font-mono focus:outline-none"
                 />
               </div>
 

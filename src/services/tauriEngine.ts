@@ -11,10 +11,17 @@ export const setupFFmpegLogListener = async (onLog: (streamId: string, line: str
   return null;
 };
 
-export const setupFFmpegExitListener = async (onExit: (streamId: string) => void): Promise<UnlistenFn | null> => {
+export const setupFFmpegRateListener = async (
+  onRate: (sample: { streamId: string; fps: number; bitrateKbps: number }) => void
+): Promise<UnlistenFn | null> => {
+  if (!isTauriEnvironment()) return null;
+  return listen<{ streamId: string; fps: number; bitrateKbps: number }>('ffmpeg-rate', (event) => onRate(event.payload));
+};
+
+export const setupFFmpegExitListener = async (onExit: (streamId: string, success: boolean) => void): Promise<UnlistenFn | null> => {
   if (isTauriEnvironment()) {
-    return await listen<string>('ffmpeg-exit', (event) => {
-      onExit(event.payload);
+    return await listen<{ streamId: string; success: boolean }>('ffmpeg-exit', (event) => {
+      onExit(event.payload.streamId, event.payload.success);
     });
   }
   return null;
@@ -46,8 +53,7 @@ export const selectNativeVideoFiles = async (): Promise<NativeVideoFile[]> => {
     const files = await invoke<NativeVideoFile[]>('select_video_files');
     console.log('[Tauri Engine] select_video_files returned:', files);
     if (!files || !Array.isArray(files)) {
-      alert('[Tauri Picker Debug] Rust returned non-array: ' + JSON.stringify(files));
-      return [];
+      throw new Error('The file picker did not return a file list');
     }
     return files.map((f) => ({
       ...f,
@@ -56,7 +62,7 @@ export const selectNativeVideoFiles = async (): Promise<NativeVideoFile[]> => {
     }));
   } catch (e) {
     console.error('Tauri native file picker error:', e);
-    alert('[Tauri Picker Error] ' + String(e));
+    throw new Error(String(e));
   }
   return [];
 };
@@ -87,6 +93,8 @@ export interface PlayoutStats {
   clipName: string;
   bufferSeconds: number;
   bufferPercent: number;
+  pipelineId?: string;
+  sharedDestinations?: number;
 }
 
 export const setupPlayoutStatsListener = async (
@@ -106,6 +114,7 @@ export const startTauriPlayoutStream = async (params: {
   streamId: string;
   clips: string[];
   config: PlayoutConfig;
+  sharePipeline?: boolean;
 }): Promise<{ success: boolean; message?: string; error?: string }> => {
   try {
     if (isTauriEnvironment()) {
@@ -113,6 +122,7 @@ export const startTauriPlayoutStream = async (params: {
         streamId: params.streamId,
         clips: params.clips,
         config: params.config,
+        sharePipeline: params.sharePipeline ?? true,
       });
       return { success: true, message: result };
     }
@@ -220,14 +230,16 @@ export const getProfileStreamKey = async (profileId: string): Promise<string | n
   return null;
 };
 
-export const deleteProfileStreamKey = async (profileId: string): Promise<void> => {
+export const deleteProfileStreamKey = async (profileId: string): Promise<boolean> => {
   try {
     if (isTauriEnvironment()) {
       await invoke('delete_profile_stream_key', { profileId });
+      return true;
     }
   } catch (e) {
     console.warn('[Tauri Keychain] delete profile stream key error:', e);
   }
+  return false;
 };
 
 export const getProcessTelemetry = async (streamId: string): Promise<{ cpu: number; memory_mb: number } | null> => {
@@ -273,8 +285,17 @@ export const probeVideoFile = async (path: string): Promise<any> => {
     if (isTauriEnvironment()) {
       return await invoke('probe_video_file', { path });
     }
+    const response = await fetch('/api/files/probe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Video probe failed');
+    return data;
   } catch (e) {
     console.error('[Tauri FFmpeg] probe error:', e);
   }
   return null;
+};
+
+export const setupClipEncodedListener = async (callback:(streamId:string)=>void):Promise<(()=>void)|null> => {
+  if(!isTauriEnvironment()) return null;
+  return listen<string>('clip-encoded',(event)=>callback(event.payload));
 };

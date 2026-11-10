@@ -1,3 +1,4 @@
+import colors from 'tailwindcss/colors';
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -8,6 +9,11 @@ export default {
   theme: {
     extend: {
       colors: {
+        slate: Object.fromEntries(Object.entries(colors.slate).map(([shade, hex]) => [shade, `rgb(var(--studio-slate-${shade}, ${parseInt(hex.slice(1,3),16)} ${parseInt(hex.slice(3,5),16)} ${parseInt(hex.slice(5,7),16)}) / <alpha-value>)`])),
+        indigo: {950:'rgb(var(--studio-indigo-950, 30 27 75) / <alpha-value>)'},
+        red: {950:'rgb(var(--studio-red-950, 69 10 10) / <alpha-value>)'},
+        emerald: {950:'rgb(var(--studio-emerald-950, 2 44 34) / <alpha-value>)'},
+        amber: {950:'rgb(var(--studio-amber-950, 69 26 3) / <alpha-value>)'},
         brand: {
           50: '#eef2ff',
           100: '#e0e7ff',
@@ -18,10 +24,11 @@ export default {
           900: '#1e1b4b',
         },
         studio: {
-          darker: '#0a0d14',
+          foreground: 'rgb(var(--studio-foreground, 255 255 255) / <alpha-value>)',
+          darker: 'rgb(var(--studio-background, 10 13 20) / <alpha-value>)',
           dark: '#0f172a',
           card: '#1e293b',
-          border: '#334155',
+          border: 'rgb(var(--studio-slate-700, 51 65 85) / <alpha-value>)',
           accent: '#ef4444',
           live: '#10b981',
         }

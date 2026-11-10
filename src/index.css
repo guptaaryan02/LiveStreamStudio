@@ -46,3 +46,53 @@
   border-color: rgba(99, 102, 241, 0.4);
   box-shadow: 0 4px 20px -2px rgba(99, 102, 241, 0.15);
 }
+
+.studio-theme { color-scheme: dark; }
+.studio-theme[data-theme="light"] {
+  color-scheme: light;
+  --studio-background: 241 245 249;
+  --studio-indigo-950: 224 231 255;
+  --studio-red-950: 254 226 226;
+  --studio-emerald-950: 209 250 229;
+  --studio-amber-950: 254 243 199;
+  --studio-foreground: 15 23 42;
+  --studio-slate-950: 248 250 252;
+  --studio-slate-900: 255 255 255;
+  --studio-slate-800: 226 232 240;
+  --studio-slate-700: 203 213 225;
+  --studio-slate-600: 100 116 139;
+  --studio-slate-500: 100 116 139;
+  --studio-slate-400: 71 85 105;
+  --studio-slate-300: 51 65 85;
+  --studio-slate-200: 30 41 59;
+  --studio-slate-100: 15 23 42;
+}
+.studio-theme[data-theme="light"] .glass-panel,
+.studio-theme[data-theme="light"] .glass-panel-interactive {
+  background: rgb(255 255 255 / .85);
+  border-color: #cbd5e1;
+}
+.studio-theme[data-theme="light"] :is(.text-indigo-200,.text-indigo-300,.text-indigo-400) { color: #4338ca; }
+.studio-theme[data-theme="light"] :is(.text-emerald-200,.text-emerald-300,.text-emerald-400) { color: #047857; }
+.studio-theme[data-theme="light"] :is(.text-amber-100,.text-amber-200,.text-amber-300,.text-amber-400) { color: #92400e; }
+.studio-theme[data-theme="light"] :is(.text-red-200,.text-red-300,.text-red-400) { color: #b91c1c; }
+.studio-theme[data-theme="light"] :is(.text-sky-400,.text-blue-400) { color: #0369a1; }
+.studio-theme[data-theme="light"] ::-webkit-scrollbar-track { background: #f1f5f9; }
+.studio-theme[data-theme="light"] ::-webkit-scrollbar-thumb { background: #94a3b8; }
+/* Video overlays retain their dark contrast in either application theme. */
+.studio-preview {
+  --studio-foreground: 255 255 255;
+  --studio-slate-950: 2 6 23;
+  --studio-slate-900: 15 23 42;
+  --studio-slate-800: 30 41 59;
+  --studio-slate-700: 51 65 85;
+  --studio-slate-400: 148 163 184;
+  --studio-slate-300: 203 213 225;
+  --studio-slate-200: 226 232 240;
+  --studio-slate-100: 241 245 249;
+}
+.studio-theme[data-theme="light"] .studio-preview .text-indigo-400 { color: #818cf8; }
+.studio-theme[data-theme="light"] .studio-preview :is(.text-indigo-200,.text-indigo-300,.text-indigo-400) { color: #a5b4fc; }
+.studio-theme[data-theme="light"] .studio-preview :is(.text-emerald-200,.text-emerald-300,.text-emerald-400) { color: #34d399; }
+.studio-theme[data-theme="light"] .studio-preview :is(.text-amber-100,.text-amber-200,.text-amber-300,.text-amber-400) { color: #fbbf24; }
+.studio-theme[data-theme="light"] .studio-preview :is(.text-red-200,.text-red-300,.text-red-400) { color: #fca5a5; }

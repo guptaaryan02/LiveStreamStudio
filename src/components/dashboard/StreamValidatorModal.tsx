@@ -90,7 +90,7 @@ export const StreamValidatorModal: React.FC<StreamValidatorModalProps> = ({
         <div className="p-6 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Radio className="w-6 h-6 text-indigo-400" />
-            <h3 className="text-xl font-bold text-white">Stream Validator</h3>
+            <h3 className="text-xl font-bold text-studio-foreground">Stream Validator</h3>
           </div>
         </div>
 
@@ -183,7 +183,7 @@ export const StreamValidatorModal: React.FC<StreamValidatorModalProps> = ({
           {/* Network Test Section */}
           <div className="bg-slate-800/30 p-5 rounded-xl border border-slate-700/50">
              <div className="flex items-center justify-between mb-4">
-               <div className="text-sm font-semibold text-white flex items-center space-x-2">
+               <div className="text-sm font-semibold text-studio-foreground flex items-center space-x-2">
                  <Wifi className="w-4 h-4 text-indigo-400" />
                  <span>RTMP Connection Check</span>
                </div>
@@ -222,7 +222,7 @@ export const StreamValidatorModal: React.FC<StreamValidatorModalProps> = ({
                <div className="grid grid-cols-4 gap-4">
                   <div>
                     <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Resolution</label>
-                    <select value={recRes} onChange={e => setRecRes(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg text-sm text-white px-2 py-1.5">
+                    <select value={recRes} onChange={e => setRecRes(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg text-sm text-studio-foreground px-2 py-1.5">
                       <option value="720p">720p</option>
                       <option value="1080p">1080p</option>
                       <option value="1440p">1440p</option>
@@ -230,7 +230,7 @@ export const StreamValidatorModal: React.FC<StreamValidatorModalProps> = ({
                   </div>
                   <div>
                     <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">FPS</label>
-                    <select value={recFps} onChange={e => setRecFps(e.target.value === 'original' ? 'original' : Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg text-sm text-white px-2 py-1.5">
+                    <select value={recFps} onChange={e => setRecFps(e.target.value === 'original' ? 'original' : Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg text-sm text-studio-foreground px-2 py-1.5">
                       <option value="original">Source</option>
                       <option value="30">30</option>
                       <option value="60">60</option>
@@ -238,7 +238,7 @@ export const StreamValidatorModal: React.FC<StreamValidatorModalProps> = ({
                   </div>
                   <div>
                     <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Bitrate (kbps)</label>
-                    <input type="number" value={recBitrate} onChange={e => setRecBitrate(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg text-sm text-white px-2 py-1.5" />
+                    <input type="number" value={recBitrate} onChange={e => setRecBitrate(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg text-sm text-studio-foreground px-2 py-1.5" />
                   </div>
                   <div>
                     <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Encoder</label>
@@ -255,7 +255,7 @@ export const StreamValidatorModal: React.FC<StreamValidatorModalProps> = ({
         <div className="p-6 bg-slate-900 border-t border-slate-800 flex justify-end space-x-3">
           <button
             onClick={onCancel}
-            className="px-6 py-2.5 rounded-xl font-semibold text-sm text-slate-300 hover:text-white hover:bg-slate-800 transition"
+            className="px-6 py-2.5 rounded-xl font-semibold text-sm text-slate-300 hover:text-studio-foreground hover:bg-slate-800 transition"
           >
             Cancel
           </button>

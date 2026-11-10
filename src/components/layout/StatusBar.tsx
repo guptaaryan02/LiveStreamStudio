@@ -1,3 +1,4 @@
+import { encoderLabel } from '../../services/streamHealth';
 import React from 'react';
 import { useStudioStore } from '../../store/useStudioStore';
 import { CheckCircle2, ShieldCheck, Wifi, Cpu, Terminal } from 'lucide-react';
@@ -43,7 +44,7 @@ export const StatusBar: React.FC = () => {
 
         <div className="flex items-center space-x-1 text-slate-300">
           <Cpu className="w-3 h-3 text-amber-400" />
-          <span>Encoder: {settings.hardwareAcc}</span>
+          <span>Encoder: {encoderLabel(liveInstance?.hardwareAcc || settings.hardwareAcc,liveInstance?.outputMode)}</span>
         </div>
 
         <div className="h-3 w-[1px] bg-slate-800" />

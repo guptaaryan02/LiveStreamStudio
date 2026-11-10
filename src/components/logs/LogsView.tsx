@@ -1,11 +1,16 @@
+import { copyText } from '../../services/uiFeedback';
+import { saveTextFile } from '../../services/uiFeedback';
+import { notify } from '../../services/uiFeedback';
 import React, { useState } from 'react';
 import { useStudioStore } from '../../store/useStudioStore';
 import { Terminal, Search, Trash2, Download, Copy, Code, Filter, CheckCircle2 } from 'lucide-react';
 import { LogLevel } from '../../types';
-import { generateSafeFFmpegCommand, sanitizeLogMessage } from '../../services/ffmpegEngine';
+import { generateSafeFFmpegCommand, sanitizeLogMessage, playlistForInstance } from '../../services/ffmpegEngine';
+import { mergeLogHistory, formatLogTime } from '../../services/diagnostics';
 
 export const LogsView: React.FC = () => {
-  const { logs, clearLogs, instances, playlists, settings } = useStudioStore();
+  const { logs, diagnosticLogs, clearLogs, instances, playlists, settings } = useStudioStore();
+  const history = mergeLogHistory(logs, diagnosticLogs);
   const [filterLevel, setFilterLevel] = useState<LogLevel | 'ALL'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTabState] = useState<'console' | 'command'>('console');
@@ -15,30 +20,26 @@ export const LogsView: React.FC = () => {
 
   const generatedCommand = activePlaylist && activeInstance
     ? generateSafeFFmpegCommand(
-        activePlaylist,
+        playlistForInstance(activePlaylist, activeInstance),
         activeInstance.platform,
         activeInstance.rtmpUrl,
         activeInstance.streamKey,
         activeInstance.hardwareAcc,
-        activeInstance.metrics.bitrateKbps || 4500
+        activeInstance.targetBitrate || settings.defaultBitrateKbps || 4500,
+        settings,
+        activeInstance.fps
       )
     : 'ffmpeg -re -f concat -safe 0 -i /tmp/playlist.txt -c:v h264_videotoolbox -b:v 4500k -c:a aac -f flv "rtmp://..."';
 
-  const filteredLogs = logs.filter((log) => {
+  const filteredLogs = history.filter((log) => {
     const matchesLevel = filterLevel === 'ALL' || log.level === filterLevel;
     const matchesSearch = log.message.toLowerCase().includes(searchQuery.toLowerCase()) || log.streamName.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesLevel && matchesSearch;
   });
 
   const handleDownloadLog = () => {
-    const logText = logs.map((l) => `[${l.timestamp}] [${l.level}] [${l.streamName}] ${sanitizeLogMessage(l.message)}`).join('\n');
-    const blob = new Blob([logText], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `livestream_studio_ffmpeg_log_${new Date().toISOString().slice(0, 10)}.log`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const logText = history.map((l) => `[${l.timestamp}] [${l.level}] [${l.streamName}] ${sanitizeLogMessage(l.message)}`).join('\n');
+    void saveTextFile(`livestream_studio_ffmpeg_log_${new Date().toISOString().slice(0, 10)}.log`, logText, 'text/plain');
   };
 
   return (
@@ -46,7 +47,7 @@ export const LogsView: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-tight flex items-center space-x-2 font-sans">
+          <h2 className="text-xl font-bold text-studio-foreground tracking-tight flex items-center space-x-2 font-sans">
             <Terminal className="w-6 h-6 text-indigo-400" />
             <span>FFmpeg Realtime Terminal & Inspector</span>
           </h2>
@@ -121,7 +122,7 @@ export const LogsView: React.FC = () => {
               <button
                 onClick={clearLogs}
                 className="p-2 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded-xl transition"
-                title="Clear Logs Buffer"
+                title="Clear live buffer (retained diagnostics stay available)"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -129,13 +130,14 @@ export const LogsView: React.FC = () => {
           </div>
 
           {/* Terminal Output Window */}
+          <p className="text-xs text-slate-400">Failures and lifecycle events are retained across restarts separately from live frame progress. New timestamps display your local date and time.</p>
           <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 h-[480px] overflow-y-auto font-mono text-xs space-y-1 select-text">
             {filteredLogs.length === 0 ? (
               <div className="text-slate-600 text-center py-20">No logs found matching criteria.</div>
             ) : (
               filteredLogs.map((log) => (
                 <div key={log.id} className="flex items-start space-x-3 leading-relaxed hover:bg-slate-900/60 p-1 rounded">
-                  <span className="text-slate-500 shrink-0 text-[11px]">[{log.timestamp}]</span>
+                  <span className="text-slate-500 shrink-0 text-[11px]">[{formatLogTime(log.timestamp)}]</span>
                   <span
                     className={`font-semibold shrink-0 text-[10px] uppercase px-1.5 py-0.5 rounded border ${
                       log.level === 'ERROR'
@@ -178,8 +180,7 @@ export const LogsView: React.FC = () => {
             </h3>
             <button
               onClick={() => {
-                navigator.clipboard.writeText(generatedCommand);
-                alert('Copied FFmpeg command to clipboard!');
+                void copyText(generatedCommand, 'Copied FFmpeg command to clipboard!');
               }}
               className="flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-sans font-semibold"
             >
@@ -189,7 +190,7 @@ export const LogsView: React.FC = () => {
           </div>
 
           <p className="text-xs font-sans text-slate-400">
-            This exact command string is executed by the desktop runtime when <strong>Go Live</strong> is pressed.
+            Equivalent terminal command for this output configuration. The desktop runtime uses separate clip encoders, a buffer, and an RTMP sender.
           </p>
 
           <pre className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-emerald-400 text-xs whitespace-pre-wrap leading-relaxed overflow-x-auto">

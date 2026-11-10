@@ -1,3 +1,9 @@
+import { editedSchedule } from '../services/schedule';
+import { outputHealth } from '../services/streamHealth';
+import { profilesWithoutKeys } from '../services/profileCredentials';
+import { appendLogs, retainDiagnostics } from '../services/diagnostics';
+import { emptyAnalytics, restoreAnalytics, sampleActivity } from '../services/analytics';
+import { isScheduleDue, scheduleRunToken, isValidLoopCount } from '../services/schedule';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import {
@@ -20,8 +26,10 @@ import {
   generateFFmpegArgs,
   generatePlaylistFileContent,
   analyzePlaylistCompatibility,
+  usePassthrough,
   getPlayableClipPaths,
   buildPlayoutConfig,
+  playlistForInstance,
   sanitizeLogMessage,
 } from '../services/ffmpegEngine';
 import {
@@ -84,9 +92,12 @@ interface StudioState {
     fps?: number,
     targetBitrate?: number
   ) => StreamInstance;
-  startStream: (instanceId: string) => void;
-  stopStream: (instanceId: string) => void;
-  handleStreamExit: (instanceId: string) => void;
+  editStreamInstance: (id: string, changes: Pick<StreamInstance, 'name' | 'playlistId' | 'platform' | 'rtmpUrl' | 'streamKey' | 'hardwareAcc' | 'fps' | 'targetBitrate'>) => boolean;
+  startStream: (instanceId: string) => Promise<void>;
+  stopStream: (instanceId: string) => Promise<void>;
+  startAllStreams: () => Promise<void>;
+  stopAllStreams: () => Promise<void>;
+  handleStreamExit: (instanceId: string, success?: boolean) => void;
   pauseStream: (instanceId: string) => void;
   resumeStream: (instanceId: string) => void;
   deleteStreamInstance: (instanceId: string) => void;
@@ -95,12 +106,17 @@ interface StudioState {
   // Stream Profiles
   profiles: StreamProfile[];
   saveProfile: (profile: Omit<StreamProfile, 'id'>) => StreamProfile;
+  rememberProfileKey: (id: string) => Promise<boolean>;
+  loadProfileKey: (id: string) => Promise<boolean>;
+  removeSavedProfileKey: (id: string) => Promise<boolean>;
+  setProfileSessionKey: (id: string, key: string) => void;
   deleteProfile: (id: string) => void;
   launchProfile: (profileId: string) => Promise<boolean>;
 
   // Schedules
   schedules: ScheduleItem[];
   addSchedule: (item: Omit<ScheduleItem, 'id'>) => void;
+  updateSchedule: (id: string, changes: Omit<ScheduleItem, 'id' | 'createdAt' | 'lastRunDate'>) => void;
   toggleSchedule: (id: string) => void;
   deleteSchedule: (id: string) => void;
   
@@ -109,12 +125,13 @@ interface StudioState {
 
   // Real-time Logs
   logs: LogEntry[];
+  diagnosticLogs: LogEntry[];
   addLog: (log: LogEntry) => void;
   clearLogs: () => void;
   settings: AppSettings;
   updateSettings: (newSettings: Partial<AppSettings>) => void;
 
-  // Analytics
+  // Recorded output only. Older seeded demo statistics are discarded on load.
   analytics: StreamAnalyticsSummary;
 
   // Telemetry Engine Ticker
@@ -123,6 +140,7 @@ interface StudioState {
 }
 
 let scheduleCheckInFlight = false;
+const missingScheduleKeyNotices = new Set<string>();
 
 /** Browser build: the dev server runs the same playout pipeline in Node. */
 const startWebPlayoutStream = async (params: {
@@ -143,6 +161,18 @@ const startWebPlayoutStream = async (params: {
     return { success: true };
   } catch (e) {
     return { success: false, error: String(e) };
+  }
+};
+
+const stopBackendStream = async (instanceId: string): Promise<void> => {
+  if (isTauriEnvironment()) {
+    if (!await stopTauriFFmpegStream(instanceId)) throw new Error('The stream process could not be stopped');
+  } else {
+    const response = await fetch('/api/ffmpeg/stop', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ streamId: instanceId }),
+    });
+    if (!response.ok) throw new Error(`Could not stop stream (HTTP ${response.status})`);
   }
 };
 
@@ -171,14 +201,22 @@ const markInstanceLive = (
   ];
 
   set((state) => ({
-    debugStatus: 'Stream is live',
+    debugStatus: isTauriEnvironment() ? 'Encoder connecting — confirm the platform preview before publishing.' : 'Stream is live',
     instances: state.instances.map((i) =>
       i.id === instanceId
         ? {
             ...i,
-            status: 'live' as const,
+            status: isTauriEnvironment() ? 'connecting' as const : 'live' as const,
             startTime: new Date().toISOString(),
+            analyticsLastSampleAt: Date.now(),
+            analyticsStarted: inst.status==='reconnecting' ? i.analyticsStarted : false,
+            analyticsRecovering: inst.status==='reconnecting' ? i.analyticsRecovering : false,
+            lastOutputAt: undefined,
+            stopping: false,
             uptimeSeconds: 0,
+            lastFailure: inst.status === 'reconnecting' ? i.lastFailure : undefined,
+            lastStopReason: undefined,
+            stoppedAt: undefined,
             metrics: {
               fps: 0,
               bitrateKbps: 0,
@@ -191,11 +229,8 @@ const markInstanceLive = (
           }
         : i
     ),
-    logs: [...initLogs, ...state.logs],
-    analytics: {
-      ...state.analytics,
-      totalStreamsRun: state.analytics.totalStreamsRun + 1,
-    },
+    ...appendLogs(state, initLogs),
+
   }));
 };
 
@@ -227,7 +262,7 @@ export const useStudioStore = create<StudioState>()(
     const { videos } = get();
     const playlistVideos = videoIds.map((id) => videos.find((v) => v.id === id)).filter(Boolean) as VideoItem[];
     const newPlaylist: Playlist = {
-      id: `pl-${Date.now()}`,
+      id: createId('pl'),
       name,
       videos: playlistVideos,
       repeatCount: -1,
@@ -282,7 +317,7 @@ export const useStudioStore = create<StudioState>()(
   deletePlaylist: (id) =>
     set((state) => ({
       playlists: state.playlists.filter((pl) => pl.id !== id),
-      activePlaylistId: state.activePlaylistId === id ? state.playlists[0]?.id || null : state.activePlaylistId,
+      activePlaylistId: state.activePlaylistId === id ? state.playlists.find((pl) => pl.id !== id)?.id || null : state.activePlaylistId,
     })),
 
   reorderPlaylistVideos: (playlistId, startIndex, endIndex) =>
@@ -388,6 +423,12 @@ export const useStudioStore = create<StudioState>()(
     return newInstance;
   },
 
+  editStreamInstance: (id, changes) => {
+    const current = get().instances.find((item) => item.id === id);
+    if (!current || !['idle', 'error'].includes(current.status) || !changes.name.trim() || !changes.streamKey.trim() || !get().playlists.some((p) => p.id === changes.playlistId)) return false;
+    set((state) => ({ instances: state.instances.map((item) => item.id === id ? { ...item, ...changes, name: changes.name.trim(), streamKey: changes.streamKey.trim() } : item) }));
+    return true;
+  },
   startStream: async (instanceId) => {
     set({ debugStatus: 'Analyzing playlist...' });
     const { instances, playlists, settings } = get();
@@ -402,13 +443,22 @@ export const useStudioStore = create<StudioState>()(
       return;
     }
 
+    const duplicate = instances.find((i) => i.id !== instanceId &&
+      ['live', 'connecting', 'reconnecting'].includes(i.status) &&
+      i.rtmpUrl.replace(/\/+$/, '') === inst.rtmpUrl.replace(/\/+$/, '') &&
+      i.streamKey.trim() === inst.streamKey.trim());
+    if (duplicate) {
+      set({ debugStatus: `[FAIL] This destination is already used by ${duplicate.name}. Use a different stream key for each simultaneous broadcast.` });
+      return;
+    }
+
     if (!inst.streamKey.trim()) {
       const message = 'Stream key is required before going live.';
       const errLog = createFFmpegLogLine(inst.id, inst.name, 'error', message);
       set((state) => ({
         debugStatus: `[FAIL] ${message}`,
-        instances: state.instances.map((i) => (i.id === instanceId ? { ...i, status: 'error' as const } : i)),
-        logs: [errLog, ...state.logs],
+        instances: state.instances.map((i) => (i.id === instanceId ? { ...i, status: 'error' as const, stopping:false } : i)),
+        ...appendLogs(state, [errLog]),
       }));
       return;
     }
@@ -419,16 +469,18 @@ export const useStudioStore = create<StudioState>()(
       ),
     }));
 
-    const playlist = playlists.find((p) => p.id === inst.playlistId);
-    if (!playlist) {
+    const sourcePlaylist = playlists.find((p) => p.id === inst.playlistId);
+    if (!sourcePlaylist) {
       set((state) => ({
         debugStatus: `[FAIL] Playlist ${inst.playlistId} not found`,
-        instances: state.instances.map((i) => (i.id === instanceId ? { ...i, status: 'error' as const } : i)),
+        instances: state.instances.map((i) => (i.id === instanceId ? { ...i, status: 'error' as const, stopping:false } : i)),
       }));
       return;
     }
 
-    const cmd = generateSafeFFmpegCommand(playlist, inst.platform, inst.rtmpUrl, inst.streamKey, inst.hardwareAcc, inst.targetBitrate || 4500, settings);
+    const playlist = playlistForInstance(sourcePlaylist, inst);
+
+    const cmd = generateSafeFFmpegCommand(playlist, inst.platform, inst.rtmpUrl, inst.streamKey, inst.hardwareAcc, inst.targetBitrate || 4500, settings, inst.fps);
 
     try {
       if (isTauriEnvironment()) {
@@ -438,8 +490,8 @@ export const useStudioStore = create<StudioState>()(
           const errLog = createFFmpegLogLine(inst.id, inst.name, 'error', message);
           set((state) => ({
             debugStatus: `[FAIL] ${message}`,
-            instances: state.instances.map((i) => (i.id === instanceId ? { ...i, status: 'error' as const } : i)),
-            logs: [errLog, ...state.logs],
+            instances: state.instances.map((i) => (i.id === instanceId ? { ...i, status: 'error' as const, stopping:false } : i)),
+            ...appendLogs(state, [errLog]),
           }));
           return;
         }
@@ -455,7 +507,7 @@ export const useStudioStore = create<StudioState>()(
         set((state) => ({
           debugStatus: `[FAIL] ${message}`,
           instances: state.instances.map((i) => (i.id === instanceId ? { ...i, status: 'error' } : i)),
-          logs: [errLog, ...state.logs],
+          ...appendLogs(state, [errLog]),
         }));
         return;
       }
@@ -464,27 +516,29 @@ export const useStudioStore = create<StudioState>()(
       // anything mixed goes through the playout engine, which normalises each
       // clip on the fly so a codec/resolution change can't kill the stream.
       const analysis = analyzePlaylistCompatibility(playlist);
+      const passthrough = usePassthrough(playlist, settings, inst.targetBitrate || settings.defaultBitrateKbps || 4500, inst.fps);
       const hardwareAcc = inst.hardwareAcc || settings.hardwareAcc;
       const bitrate = inst.targetBitrate || settings.defaultBitrateKbps || 4500;
+      set((state)=>({instances:state.instances.map((i)=>i.id===instanceId ? {...i,outputMode:passthrough ? 'copy' as const : 'encode' as const} : i)}));
       const clips = getPlayableClipPaths(playlist);
       set({
-        debugStatus: analysis.isCompatible
+        debugStatus: passthrough
           ? 'Playlist analyzed. Fast Mode selected. Going Live...'
-          : 'Playlist analyzed. Mixed formats detected. Optimizing for compatibility... Going Live...',
+          : 'Preparing constant-bitrate output... Going Live...',
       });
 
       const modeLog = createFFmpegLogLine(
         inst.id,
         inst.name,
         'status',
-        analysis.isCompatible
-          ? `Playlist analyzed — Fast Mode selected for ${clips.length} clip(s)`
-          : `Playlist analyzed — mixed formats detected; optimizing for compatibility with ${hardwareAcc}` +
+        passthrough
+          ? `Source passthrough selected for ${clips.length} clip(s): output bitrate follows the source file`
+          : `Constant-bitrate output: ${bitrate} Kbps with ${hardwareAcc}` +
             (analysis.differences.length ? ` (differences: ${analysis.differences.slice(0, 4).join(', ')})` : '')
       );
-      set((state) => ({ logs: [modeLog, ...state.logs] }));
+      set((state) => ({ ...appendLogs(state, [modeLog]) }));
 
-      if (!analysis.isCompatible) {
+      if (!passthrough) {
         const config = buildPlayoutConfig(
           playlist,
           inst.rtmpUrl,
@@ -496,7 +550,7 @@ export const useStudioStore = create<StudioState>()(
         );
 
         const result = isTauriEnvironment()
-          ? await startTauriPlayoutStream({ streamId: inst.id, clips, config })
+          ? await startTauriPlayoutStream({ streamId: inst.id, clips, config, sharePipeline: settings.sharedEncodingEnabled!==false && !inst.playbackLoopLimit })
           : await startWebPlayoutStream({ streamId: inst.id, clips, config });
 
         if (!result.success) {
@@ -504,11 +558,15 @@ export const useStudioStore = create<StudioState>()(
           set((state) => ({
             debugStatus: `[FAIL] ${result.error}`,
             instances: state.instances.map((i) => (i.id === instanceId ? { ...i, status: 'error' } : i)),
-            logs: [errLog, ...state.logs],
+            ...appendLogs(state, [errLog]),
           }));
           return;
         }
 
+        if (!['connecting', 'live'].includes(get().instances.find((i) => i.id === instanceId)?.status || '')) {
+          await stopBackendStream(instanceId);
+          return;
+        }
         markInstanceLive(set, instanceId, inst, cmd, settings);
         return;
       }
@@ -520,7 +578,8 @@ export const useStudioStore = create<StudioState>()(
         inst.streamKey,
         hardwareAcc,
         bitrate,
-        settings
+        settings,
+        inst.fps
       );
 
       if (isTauriEnvironment()) {
@@ -537,7 +596,7 @@ export const useStudioStore = create<StudioState>()(
             instances: state.instances.map((i) =>
               i.id === instanceId ? { ...i, status: 'error' } : i
             ),
-            logs: [errLog, ...state.logs]
+            ...appendLogs(state, [errLog])
           }));
           return;
         }
@@ -559,7 +618,7 @@ export const useStudioStore = create<StudioState>()(
           set((state) => ({
             debugStatus: `[FAIL] FFmpeg launch failed: ${reason}`,
             instances: state.instances.map((i) => (i.id === instanceId ? { ...i, status: 'error' } : i)),
-            logs: [errLog, ...state.logs],
+            ...appendLogs(state, [errLog]),
           }));
           return;
         }
@@ -571,12 +630,26 @@ export const useStudioStore = create<StudioState>()(
         instances: state.instances.map((i) =>
           i.id === instanceId ? { ...i, status: 'error' } : i
         ),
-        logs: [errLog, ...state.logs]
+        ...appendLogs(state, [errLog])
       }));
       return;
     }
 
+    if (!['connecting', 'live'].includes(get().instances.find((i) => i.id === instanceId)?.status || '')) {
+      await stopBackendStream(instanceId);
+      return;
+    }
     markInstanceLive(set, instanceId, inst, cmd, settings);
+  },
+
+  startAllStreams: async () => {
+    const ids = get().instances.filter((i) => ['idle', 'error'].includes(i.status)).map((i) => i.id);
+    await Promise.all(ids.map((id) => get().startStream(id)));
+  },
+
+  stopAllStreams: async () => {
+    const ids = get().instances.filter((i) => ['live', 'connecting', 'reconnecting', 'paused'].includes(i.status)).map((i) => i.id);
+    await Promise.all(ids.map((id) => get().stopStream(id)));
   },
 
   stopStream: async (instanceId) => {
@@ -584,17 +657,17 @@ export const useStudioStore = create<StudioState>()(
     const inst = instances.find((i) => i.id === instanceId);
     if (!inst) return;
 
+    // Mark stopped before IPC: its exit event must not schedule recovery.
+    set((state) => ({ instances: state.instances.map((i) =>
+      i.id === instanceId ? { ...i, status: 'idle' as const, stopping:true, scheduledStopTime: undefined } : i
+    ) }));
     try {
-      if (isTauriEnvironment()) {
-        await stopTauriFFmpegStream(instanceId);
-      } else {
-        await fetch('/api/ffmpeg/stop', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ streamId: instanceId }),
-        });
-      }
-    } catch (e) {}
+      await stopBackendStream(instanceId);
+    } catch (error) {
+      set((state) => ({ instances: state.instances.map((i) => i.id === instanceId ? { ...i, status: 'error' as const, stopping:false } : i),
+        ...appendLogs(state, [createFFmpegLogLine(inst.id, inst.name, 'error', `Stop failed: ${String(error)}`)]) }));
+      return;
+    }
 
     const stopLog = createFFmpegLogLine(inst.id, inst.name, 'status', `Stream stopped. SIGTERM sent to native FFmpeg process.`);
 
@@ -604,16 +677,19 @@ export const useStudioStore = create<StudioState>()(
           ? {
               ...i,
               status: 'idle',
+              stopping:false,
+              stoppedAt:new Date().toISOString(),
+              lastStopReason:inst.scheduledStopTime && Date.now() >= Date.parse(inst.scheduledStopTime) ? 'Scheduled time limit reached.' : 'Stopped by user.',
               uptimeSeconds: 0,
               metrics: { fps: 0, bitrateKbps: 0, droppedFrames: 0, cpuPercent: 0, memoryMb: 0, uploadSpeedMbps: 0, connectionQuality: 'Excellent' },
             }
           : i
       ),
-      logs: [stopLog, ...state.logs],
+      ...appendLogs(state, [stopLog]),
     }));
   },
 
-  handleStreamExit: (instanceId) => {
+  handleStreamExit: (instanceId, success = false) => {
     const { instances, settings, startStream } = get();
     const inst = instances.find(i => i.id === instanceId);
     if (!inst) return;
@@ -622,22 +698,35 @@ export const useStudioStore = create<StudioState>()(
     // (idle = stopped by the user, reconnecting = a retry is already pending,
     // error = already given up) must be ignored, so duplicate exit events can
     // never schedule two recoveries for the same disconnect.
-    if (inst.status !== 'live') return;
+    if (inst.status !== 'live' && inst.status !== 'connecting') return;
+    if (inst.stopping) return;
+
+    const source = get().playlists.find((p) => p.id === inst.playlistId);
+    const finite = !!inst.playbackLoopLimit || (!!source && !source.isInfiniteLoop);
+    if (success && finite) {
+      const loops = inst.playbackLoopLimit || source?.repeatCount || 1;
+      const reason = `Completed ${loops} complete playlist loop(s).`;
+      set((state) => ({instances:state.instances.map((i) => i.id === instanceId ? {...i,status:'idle' as const,scheduledStopTime:undefined,stoppedAt:new Date().toISOString(),lastStopReason:reason} : i),
+        ...appendLogs(state,[createFFmpegLogLine(inst.id,inst.name,'status',reason)])}));
+      return;
+    }
+    const evidence = get().diagnosticLogs.filter((l) => l.streamId === instanceId && l.level === 'ERROR').slice(0,3).map((l) => l.message).join(' | ');
+    const failure = sanitizeLogMessage(evidence || (success ? 'Encoder ended unexpectedly during an infinite stream.' : 'Sender exited unexpectedly; no error details were reported.')).slice(0,1200);
 
     const giveUp = (reason: string) => {
       const logLine = createFFmpegLogLine(inst.id, inst.name, 'error', reason);
       set(state => ({
         instances: state.instances.map(i =>
-          i.id === instanceId ? { ...i, status: 'error' as const, retryCount: 0 } : i
+            i.id === instanceId ? { ...i, status: 'error' as const, lastFailure:failure, lastStopReason:reason, stoppedAt:new Date().toISOString() } : i
         ),
-        logs: [logLine, ...state.logs],
+        ...appendLogs(state, [logLine]),
       }));
     };
 
     // A process that died almost immediately never connected — retrying just
     // hammers the RTMP server with the same bad URL or stream key.
     const ranForMs = inst.startTime ? Date.now() - new Date(inst.startTime).getTime() : 0;
-    if (ranForMs > 0 && ranForMs < 5000) {
+    if (ranForMs > 0 && ranForMs < 5000 && !inst.analyticsStarted) {
       giveUp('Stream ended immediately — FFmpeg could not open the RTMP output. Check the stream key and RTMP URL, then start again. Not retrying.');
       return;
     }
@@ -657,8 +746,7 @@ export const useStudioStore = create<StudioState>()(
     // A dropped socket on a working connection comes back immediately, so the
     // first attempt is near-instant; only repeated failures back off, which is
     // what stops a genuinely broken endpoint from being hammered.
-    const backoffIntervals = [1000, 2000, 5000, 10000, 20000];
-    const waitTime = backoffIntervals[Math.min(currentRetry, backoffIntervals.length - 1)];
+    const waitTime = Math.min(60000, Math.max(1, settings.retryIntervalSeconds || 5) * 1000 * Math.pow(2, currentRetry));
 
     const logLine = createFFmpegLogLine(
       inst.id,
@@ -669,9 +757,9 @@ export const useStudioStore = create<StudioState>()(
 
     set(state => ({
       instances: state.instances.map(i =>
-        i.id === instanceId ? { ...i, status: 'reconnecting' as const, retryCount: currentRetry + 1 } : i
+        i.id === instanceId ? { ...i, status: 'reconnecting' as const, lastFailure:failure, analyticsRecovering:true, analyticsLastSampleAt:Date.now(), retryCount: currentRetry + 1 } : i
       ),
-      logs: [logLine, ...state.logs]
+      ...appendLogs(state, [logLine])
     }));
 
     setTimeout(() => {
@@ -693,64 +781,45 @@ export const useStudioStore = create<StudioState>()(
       instances: state.instances.map((i) => (i.id === instanceId ? { ...i, status: 'live' } : i)),
     })),
 
-  deleteStreamInstance: (instanceId) =>
+  deleteStreamInstance: async (instanceId) => {
+    await get().stopStream(instanceId);
+    if (get().instances.find((i) => i.id === instanceId)?.status === 'error') return;
     set((state) => ({
       instances: state.instances.filter((i) => i.id !== instanceId),
       activeInstanceId: state.activeInstanceId === instanceId ? null : state.activeInstanceId,
-    })),
+    }));
+  },
 
   updateInstanceMetrics: (instanceId, metrics) =>
-    set((state) => ({
-      instances: state.instances.map((i) =>
-        i.id === instanceId
-          ? { ...i, metrics: { ...i.metrics, ...metrics } }
-          : i
-      ),
-    })),
+    set((state) => {
+      let analytics=restoreAnalytics(state.analytics);
+      const now=Date.now();
+      return {instances:state.instances.map((i)=>{
+        if(i.id!==instanceId || !['connecting','live','reconnecting'].includes(i.status)) return i;
+        const output=(metrics.fps || 0)>0 && (metrics.bitrateKbps || 0)>0;
+        const goingLive=i.status==='connecting' && output;
+        if(goingLive && !i.analyticsStarted) analytics={...analytics,totalStreamsRun:analytics.totalStreamsRun+1};
+        if(goingLive && i.analyticsRecovering) analytics={...analytics,successfulReconnections:analytics.successfulReconnections+1};
+        const combined={...i.metrics,...metrics};
+        if(metrics.fps!==undefined || metrics.bitrateKbps!==undefined || metrics.droppedFrames!==undefined) combined.connectionQuality=outputHealth(combined,i.fps || 30);
+        const slowSince=metrics.fps===undefined ? i.slowOutputSince : combined.fps<(i.fps || 30)*.8 ? (i.slowOutputSince ?? now) : undefined;
+        return {...i,slowOutputSince:slowSince,status:goingLive ? 'live' as const : i.status,metrics:combined,
+          analyticsStarted:i.analyticsStarted || goingLive,analyticsRecovering:goingLive ? false : i.analyticsRecovering,
+          analyticsLastSampleAt:goingLive ? now : i.analyticsLastSampleAt,lastOutputAt:output ? now : i.lastOutputAt};
+      }),analytics};
+    }),
 
   simulateNetworkDrop: (instanceId) => {
-    const { instances } = get();
-    const inst = instances.find((i) => i.id === instanceId);
-    if (!inst) return;
-
-    const errLog = createFFmpegLogLine(inst.id, inst.name, 'error');
-    const recLog = createFFmpegLogLine(inst.id, inst.name, 'reconnect');
-
-    set((state) => ({
-      instances: state.instances.map((i) =>
-        i.id === instanceId
-          ? {
-              ...i,
-              status: 'reconnecting',
-              retryAttempts: i.retryAttempts + 1,
-              metrics: { ...i.metrics, connectionQuality: 'Poor', droppedFrames: i.metrics.droppedFrames + 45 },
-            }
-          : i
-      ),
-      logs: [recLog, errLog, ...state.logs],
-    }));
-
-    setTimeout(() => {
-      const recoveredState = get();
-      const currentInst = recoveredState.instances.find((i) => i.id === instanceId);
-      if (currentInst && currentInst.status === 'reconnecting') {
-        const succLog = createFFmpegLogLine(instanceId, currentInst.name, 'status', `Auto-Recovery Success: RTMP Socket re-established cleanly.`);
-        set((s) => ({
-          instances: s.instances.map((i) =>
-            i.id === instanceId
-              ? {
-                  ...i,
-                  status: 'live',
-                  retryAttempts: 0,
-                  metrics: { ...i.metrics, connectionQuality: 'Excellent' },
-                }
-              : i
-          ),
-          logs: [succLog, ...s.logs],
-          analytics: { ...s.analytics, successfulReconnections: s.analytics.successfulReconnections + 1 },
-        }));
-      }
-    }, 3500);
+    const inst = get().instances.find((i) => i.id === instanceId);
+    if (!inst || inst.status !== 'live') return;
+    // Exercise the actual sender and normal recovery path, rather than painting
+    // a successful reconnection over an uninterrupted process.
+    void get().stopStream(instanceId).then(() => {
+      const current=get().instances.find((i)=>i.id===instanceId);
+      if(!current || current.status !== 'idle') return;
+      set((state)=>({instances:state.instances.map((i)=>i.id===instanceId ? {...i,status:'live' as const,startTime:new Date(Date.now()-6000).toISOString()} : i)}));
+      get().handleStreamExit(instanceId);
+    });
   },
 
   // Profiles
@@ -761,29 +830,46 @@ export const useStudioStore = create<StudioState>()(
       ...prof,
       id,
       streamKey: prof.streamKey,
+      keyStorage: 'session',
     };
-    if (isTauriEnvironment() && prof.streamKey.trim()) {
-      saveProfileStreamKey(id, prof.streamKey.trim()).catch((e) =>
-        console.warn('[Profiles] Could not save stream key securely:', e)
-      );
-    }
     set((state) => ({ profiles: [...state.profiles, newProfile] }));
     return newProfile;
   },
+  // Credential operations are explicit UI actions preceded by an explanation.
+  rememberProfileKey: async (id) => {
+    const profile = get().profiles.find((p) => p.id === id);
+    if (!profile?.streamKey.trim() || !isTauriEnvironment()) return false;
+    if (!await saveProfileStreamKey(id, profile.streamKey.trim())) return false;
+    set((state) => ({profiles: state.profiles.map((p) => p.id === id ? {...p, keyStorage:'keychain' as const} : p)}));
+    return true;
+  },
+  loadProfileKey: async (id) => {
+    const profile = get().profiles.find((p) => p.id === id);
+    if (!profile || profile.keyStorage === 'session' || !isTauriEnvironment()) return false;
+    const key = await getProfileStreamKey(id);
+    if (!key?.trim()) return false;
+    set((state) => ({profiles: state.profiles.map((p) => p.id === id ? {...p, streamKey:key, keyStorage:'keychain' as const} : p)}));
+    return true;
+  },
+  removeSavedProfileKey: async (id) => {
+    const profile = get().profiles.find((p) => p.id === id);
+    if (!profile) return false;
+    if (profile.keyStorage !== 'session' && !await deleteProfileStreamKey(id)) return false;
+    set((state) => ({profiles: state.profiles.map((p) => p.id === id ? {...p, keyStorage:'session' as const} : p)}));
+    return true;
+  },
+  setProfileSessionKey: (id, key) => set((state) => ({profiles:state.profiles.map((p) => p.id === id ? {...p,streamKey:key.trim()} : p)})),
   deleteProfile: (id) => {
-    if (isTauriEnvironment()) {
-      deleteProfileStreamKey(id);
-    }
     set((state) => ({ profiles: state.profiles.filter((p) => p.id !== id) }));
   },
   launchProfile: async (profileId) => {
     const { profiles, createStreamInstance, startStream } = get();
     const profile = profiles.find((p) => p.id === profileId);
     if (!profile) return false;
-    const streamKey = profile.streamKey || (await getProfileStreamKey(profile.id)) || '';
+    const streamKey = profile.streamKey;
     if (!streamKey.trim()) {
       get().addLog(
-        createFFmpegLogLine(profile.id, profile.name, 'error', 'Cannot launch profile: Stream key is missing. Save the profile again with a valid RTMP key.')
+        createFFmpegLogLine(profile.id, profile.name, 'error', 'Load the saved stream key or enter a session key in Stream Profiles before launching.')
       );
       return false;
     }
@@ -794,7 +880,9 @@ export const useStudioStore = create<StudioState>()(
       profile.platform,
       profile.rtmpUrl,
       streamKey,
-      profile.hardwareAcc
+      profile.hardwareAcc,
+      profile.fps,
+      profile.targetBitrateKbps
     );
     startStream(instance.id);
     return true;
@@ -805,10 +893,12 @@ export const useStudioStore = create<StudioState>()(
   addSchedule: (item) => {
     const newSchedule: ScheduleItem = {
       ...item,
-      id: `sch-${Date.now()}`,
+      id: createId('sch'),
+      createdAt: item.createdAt || new Date().toISOString(),
     };
     set((state) => ({ schedules: [...state.schedules, newSchedule] }));
   },
+  updateSchedule: (id, changes) => set((state) => ({ schedules: state.schedules.map((item) => item.id === id ? editedSchedule(item, changes) : item) })),
   toggleSchedule: (id) =>
     set((state) => ({
       schedules: state.schedules.map((s) => (s.id === id ? { ...s, isActive: !s.isActive } : s)),
@@ -817,8 +907,9 @@ export const useStudioStore = create<StudioState>()(
 
   // Logs
   logs: [],
+  diagnosticLogs: [],
   clearLogs: () => set({ logs: [] }),
-  addLog: (log) => set((state) => ({ logs: [{ ...log, message: sanitizeLogMessage(log.message) }, ...state.logs.slice(0, 499)] })),
+  addLog: (log) => set((state) => appendLogs(state, [log])),
 
   // Settings
   settings: {
@@ -827,31 +918,31 @@ export const useStudioStore = create<StudioState>()(
     useCustomFfmpeg: false,
     hardwareAcc: 'Auto',
     defaultBitrateKbps: 4500,
+    useSourceBitrate: false,
     autoRecoveryEnabled: true,
     outputResolution: '1080p',
     outputFps: 'original',
     retryIntervalSeconds: 5,
     maxRetryCount: 5,
-    desktopNotifications: true,
+    desktopNotifications: false,
+    sharedEncodingEnabled: true,
+    pausePreviewByDefault: true,
   },
   updateSettings: (newSettings) => set((state) => ({ settings: { ...state.settings, ...newSettings } })),
 
-  // Analytics
-  analytics: {
-    totalStreamsRun: 14,
-    totalHoursStreamed: 182.5,
-    averageBitrateKbps: 4480,
-    successfulReconnections: 9,
-    totalVideosStreamed: 640,
-    streamStabilityPercent: 99.9,
-  },
+  // Recorded encoder activity
+  analytics: emptyAnalytics(),
 
   // Telemetry Engine Ticker
   tickTelemetry: async () => {
+    const expired = get().instances.filter((i) => i.scheduledStopTime &&
+      Date.now() >= new Date(i.scheduledStopTime).getTime() &&
+      ['live', 'connecting', 'reconnecting'].includes(i.status));
+    await Promise.all(expired.map((i) => get().stopStream(i.id)));
     const { instances, playlists } = get();
 
     const liveInstances = instances.filter(i => i.status === 'live');
-    if (liveInstances.length === 0) return;
+    if (!instances.some((i)=>['live','connecting','reconnecting'].includes(i.status))) return;
 
     // Fetch telemetry in parallel
     const telemetryResults = await Promise.all(
@@ -863,7 +954,7 @@ export const useStudioStore = create<StudioState>()(
 
     set((state) => {
       const updatedInstances = state.instances.map((inst) => {
-        if (inst.status !== 'live') return inst;
+        if (inst.status !== 'live') return ['connecting','reconnecting'].includes(inst.status) ? {...inst,analyticsLastSampleAt:Date.now()} : inst;
 
         const sys = telemetryResults.find(t => t.id === inst.id)?.sys;
         const playlist = playlists.find((p) => p.id === inst.playlistId);
@@ -894,6 +985,7 @@ export const useStudioStore = create<StudioState>()(
         return {
           ...inst,
           uptimeSeconds: nextUptime,
+          analyticsLastSampleAt: Date.now(),
           // A stream that has held up for two minutes has recovered; give it a
           // fresh recovery budget so a 24/7 run isn't capped for its whole life.
           retryCount: nextUptime > 120 ? 0 : inst.retryCount,
@@ -911,10 +1003,7 @@ export const useStudioStore = create<StudioState>()(
 
       return {
         instances: updatedInstances,
-        analytics: {
-          ...state.analytics,
-          totalHoursStreamed: state.analytics.totalHoursStreamed + (liveInstances.length / 3600),
-        },
+        analytics: sampleActivity(state.analytics,state.instances,Date.now()),
       };
     });
   },
@@ -924,78 +1013,39 @@ export const useStudioStore = create<StudioState>()(
     scheduleCheckInFlight = true;
     void (async () => {
       try {
-        const { schedules, startStream, instances, createStreamInstance, profiles, addLog } = get();
         const now = new Date();
-
-        // Format current time to match scheduledTime like "07:00 AM"
-        let h = now.getHours();
-        const m = now.getMinutes();
-        const ampm = h >= 12 ? 'PM' : 'AM';
-        h = h % 12;
-        h = h ? h : 12;
-        const currentTimeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
-        const currentDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
-        const todayDateStr = now.toISOString().split('T')[0];
-
-        let schedulesModified = false;
-        const updatedSchedules = [];
-
-        for (const schedule of schedules) {
-          if (!schedule.isActive || !schedule.autoStart) {
-            updatedSchedules.push(schedule);
+        for (const original of get().schedules) {
+          const schedule = get().schedules.find((s) => s.id === original.id);
+          if (!schedule || !isScheduleDue(schedule, now)) continue;
+          const profile = get().profiles.find((p) => p.id === schedule.profileId);
+          const key = profile?.streamKey || '';
+          const current = get().schedules.find((s) => s.id === schedule.id);
+          if (!current || !isScheduleDue(current, now)) continue;
+          if (!profile || !key.trim()) {
+            const token = `${schedule.id}:${scheduleRunToken(schedule,now)}`;
+            if (!missingScheduleKeyNotices.has(token)) {
+              missingScheduleKeyNotices.add(token);
+              get().addLog(createFFmpegLogLine(schedule.id, schedule.title, 'error', 'Scheduled stream is waiting: load the saved key or enter a session key in Stream Profiles. Keychain access is never requested automatically.'));
+            }
             continue;
           }
-
-          // If time and day match, and it hasn't already run today at this minute
-          const hasRunNow = schedule.lastRunDate === `${todayDateStr} ${currentTimeStr}`;
-
-          if (schedule.repeatDays.includes(currentDay) && schedule.scheduledTime === currentTimeStr && !hasRunNow) {
-            // Find if this specific schedule title is already running
-            const isRunning = instances.some((i) => i.name === schedule.title && i.status === 'live');
-            if (!isRunning) {
-              // Resolve profile to use its platform settings, or fallback
-              const prof = profiles.find((p) => p.id === schedule.profileId);
-              const streamKey = prof ? prof.streamKey || (await getProfileStreamKey(prof.id)) || '' : '';
-
-              if (!prof || !streamKey.trim()) {
-                addLog(
-                  createFFmpegLogLine(
-                    schedule.id,
-                    schedule.title,
-                    'error',
-                    'Scheduled stream skipped: profile or stream key is missing.'
-                  )
-                );
-                updatedSchedules.push(schedule);
-                continue;
-              }
-
-              const newInst = createStreamInstance(
-                schedule.title,
-                prof.playlistId,
-                prof.platform,
-                prof.rtmpUrl,
-                streamKey,
-                prof.hardwareAcc
-              );
-
-              // Trigger the FFmpeg stream asynchronously without awaiting it here
-              startStream(newInst.id);
-              schedulesModified = true;
-              updatedSchedules.push({ ...schedule, lastRunDate: `${todayDateStr} ${currentTimeStr}` });
-              continue;
-            }
+          // Claim the launch before starting: repeated timer ticks cannot create
+          // two instances, including while credentials or network IPC are pending.
+          set((state) => ({ schedules: state.schedules.map((s) => s.id === schedule.id
+            ? { ...s, lastRunDate: scheduleRunToken(s, now), isActive: s.scheduledAt ? false : s.isActive } : s) }));
+          if (schedule.autoStop && schedule.stopMode === 'loops' && !isValidLoopCount(schedule.stopAfterLoops)) {
+            get().addLog(createFFmpegLogLine(schedule.id, schedule.title, 'error', 'Scheduled stream skipped: loop count must be a whole number from 1 to 10000.'));
+            continue;
           }
-
-          updatedSchedules.push(schedule);
+          if (get().instances.some((i) => i.scheduleId === schedule.id && ['live','connecting','reconnecting'].includes(i.status))) continue;
+          const instance = get().createStreamInstance(schedule.title, profile.playlistId, profile.platform, profile.rtmpUrl, key, profile.hardwareAcc, profile.fps, profile.targetBitrateKbps);
+          set((state) => ({ instances: state.instances.map((i) => i.id === instance.id ? { ...i, scheduleId: schedule.id,
+            playbackLoopLimit: schedule.autoStop && schedule.stopMode === 'loops' ? schedule.stopAfterLoops : undefined,
+            scheduledStopTime: schedule.autoStop && schedule.stopMode !== 'loops' && schedule.stopAfterMinutes && schedule.stopAfterMinutes > 0
+              ? new Date(now.getTime() + schedule.stopAfterMinutes * 60000).toISOString() : undefined } : i) }));
+          void get().startStream(instance.id);
         }
-
-        if (schedulesModified) {
-          set({ schedules: updatedSchedules });
-        }
-      } finally {
-        scheduleCheckInFlight = false;
-      }
+      } finally { scheduleCheckInFlight = false; }
     })();
   },
 }),
@@ -1003,9 +1053,10 @@ export const useStudioStore = create<StudioState>()(
       name: 'livestream-studio-storage',
       partialize: (state) => ({
         analytics: state.analytics,
+        diagnosticLogs: state.diagnosticLogs,
         settings: state.settings,
         schedules: state.schedules,
-        profiles: state.profiles.map((profile) => ({ ...profile, streamKey: '' })),
+        profiles: profilesWithoutKeys(state.profiles),
         playlists: state.playlists,
         videos: state.videos
       }),
@@ -1030,7 +1081,9 @@ export const useStudioStore = create<StudioState>()(
           state.playlists = purgedPlaylists;
         }
 
-        state.profiles = state.profiles.map((profile) => ({ ...profile, streamKey: '' }));
+        state.analytics = restoreAnalytics(state.analytics);
+        state.diagnosticLogs = retainDiagnostics([], Array.isArray(state.diagnosticLogs) ? state.diagnosticLogs : []);
+        state.profiles = profilesWithoutKeys(state.profiles);
       },
     }
   )

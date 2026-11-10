@@ -2,6 +2,14 @@ import { Playlist, StreamPlatform, HardwareAcceleration, StreamInstance, LogEntr
 
 const SECRET_PLACEHOLDER = '***STREAM_KEY***';
 
+/** A run's stop rule must never change the saved playlist or other streams. */
+export function playlistForInstance(playlist: Playlist, instance?: Pick<StreamInstance, 'playbackLoopLimit'>): Playlist {
+  const loops = instance?.playbackLoopLimit;
+  return Number.isSafeInteger(loops) && loops! > 0
+    ? {...playlist, isInfiniteLoop: false, repeatCount: loops!}
+    : playlist;
+}
+
 export function maskStreamKey(value: string, streamKey?: string): string {
   if (!value) return value;
   let masked = value;
@@ -155,6 +163,25 @@ export const getHardwareEncoderFlags = (hw: HardwareAcceleration, videoCodec: st
   }
 };
 
+export const usePassthrough = (playlist: Playlist, settings?: AppSettings, bitrateKbps=4500, instanceFps?:number): boolean => {
+  if(!analyzePlaylistCompatibility(playlist).isCompatible) return false;
+  if(settings?.useSourceBitrate===true) return true;
+  const expected=buildPlayoutConfig(playlist,'','','Software',bitrateKbps,settings,instanceFps);
+  return playlist.videos.every((video)=>{
+    const ready=video.streamReadyProfile;
+    return ready?.version===1 && ready.width===expected.width && ready.height===expected.height && ready.fps===expected.fps && ready.bitrateKbps===expected.bitrateKbps;
+  });
+};
+
+export const constantBitrateFlags = (hw: HardwareAcceleration): string[] => {
+  switch (hw) {
+    case 'VideoToolbox': return ['-constant_bit_rate', 'true', '-realtime', 'true'];
+    case 'NVENC': return ['-rc', 'cbr'];
+    case 'QuickSync': return [];
+    default: return ['-x264-params', 'nal-hrd=cbr:force-cfr=1', '-sc_threshold', '0'];
+  }
+};
+
 export function generateFFmpegArgs(
   playlist: Playlist,
   platform: StreamPlatform,
@@ -162,10 +189,11 @@ export function generateFFmpegArgs(
   streamKey: string,
   hardwareAcc: HardwareAcceleration = 'Auto',
   bitrateKbps: number = 4500,
-  settings?: AppSettings
+  settings?: AppSettings,
+  instanceFps?:number
 ): string[] {
   const fullRtmpPath = `${rtmpUrl}/${streamKey}`;
-  const isCompatible = analyzePlaylistCompatibility(playlist).isCompatible;
+  const isCompatible = usePassthrough(playlist, settings, bitrateKbps, instanceFps);
 
   const args: string[] = [];
   const hwFlags = getHardwareEncoderFlags(hardwareAcc);
@@ -207,7 +235,7 @@ export function generateFFmpegArgs(
     const targetFps =
       settings?.outputFps && settings.outputFps !== 'original'
         ? settings.outputFps
-        : Math.round(playlist.videos[0]?.metadata?.fps || 30).toString();
+        : Math.round(instanceFps || playlist.videos[0]?.metadata?.fps || 30).toString();
 
     args.push(
       '-vf',
@@ -215,7 +243,10 @@ export function generateFFmpegArgs(
       '-af',
       'aresample=async=1,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo',
       ...hwFlags,
+      ...constantBitrateFlags(hardwareAcc),
+      '-bf', '0',
       '-b:v', `${bitrateKbps}k`,
+      '-minrate', `${bitrateKbps}k`,
       '-maxrate', `${bitrateKbps}k`,
       '-bufsize', `${bitrateKbps * 2}k`,
       '-g', `${Number(targetFps) * 2 || 60}`,
@@ -227,7 +258,7 @@ export function generateFFmpegArgs(
     );
   }
 
-  args.push('-flvflags', 'no_duration_filesize', '-f', 'flv', fullRtmpPath);
+  args.push('-flvflags', 'no_duration_filesize', '-f', 'flv', '-rw_timeout', '15000000', fullRtmpPath);
 
   return args;
 }
@@ -239,9 +270,10 @@ export function generateFFmpegCommand(
   streamKey: string,
   hardwareAcc: HardwareAcceleration = 'Auto',
   bitrateKbps: number = 4500,
-  settings?: AppSettings
+  settings?: AppSettings,
+  instanceFps?:number
 ): string {
-  const args = generateFFmpegArgs(playlist, platform, rtmpUrl, streamKey, hardwareAcc, bitrateKbps, settings);
+  const args = generateFFmpegArgs(playlist, platform, rtmpUrl, streamKey, hardwareAcc, bitrateKbps, settings, instanceFps);
   const ffmpegPath = settings?.ffmpegPath || 'ffmpeg';
   
   // Format args into a readable shell command
@@ -262,10 +294,11 @@ export function generateSafeFFmpegCommand(
   streamKey: string,
   hardwareAcc: HardwareAcceleration = 'Auto',
   bitrateKbps: number = 4500,
-  settings?: AppSettings
+  settings?: AppSettings,
+  instanceFps?:number
 ): string {
   return maskStreamKey(
-    generateFFmpegCommand(playlist, platform, rtmpUrl, streamKey, hardwareAcc, bitrateKbps, settings),
+    generateFFmpegCommand(playlist, platform, rtmpUrl, streamKey, hardwareAcc, bitrateKbps, settings, instanceFps),
     streamKey
   );
 }

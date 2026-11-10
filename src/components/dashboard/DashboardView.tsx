@@ -1,3 +1,7 @@
+import { StreamKeyInput } from '../common/StreamKeyInput';
+import { encoderLabel } from '../../services/streamHealth';
+import { saveTextFile } from '../../services/uiFeedback';
+import { notify } from '../../services/uiFeedback';
 import React, { useState } from 'react';
 import { useStudioStore } from '../../store/useStudioStore';
 import { LivePlayerCanvas } from './LivePlayerCanvas';
@@ -85,11 +89,11 @@ export const DashboardView: React.FC = () => {
     
     const playlist = playlists.find((p) => p.id === selectedPlaylistId);
     if (!playlist || playlist.videos.length === 0) {
-      alert('Please select a playlist with at least one video before going live!');
+      notify('Please select a playlist with at least one video before going live!');
       return;
     }
     if (!streamKeyInput.trim()) {
-      alert('Please enter your RTMP Stream Key before going live!');
+      notify('Please enter your RTMP Stream Key before going live!');
       return;
     }
 
@@ -139,7 +143,7 @@ export const DashboardView: React.FC = () => {
   const handleDownloadMacScript = () => {
     if (!activePlaylist) return;
     if (!streamKeyInput.trim()) {
-      alert('Please paste your Stream Key before downloading the terminal script!');
+      notify('Please paste your Stream Key before downloading the terminal script!');
       return;
     }
     const rtmpUrl = defaultRtmpUrls[selectedPlatform];
@@ -151,19 +155,13 @@ export const DashboardView: React.FC = () => {
       hardwareAcc
     );
 
-    const blob = new Blob([script], { type: 'text/x-sh' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `start_live_stream_mac.sh`;
-    a.click();
-    URL.revokeObjectURL(url);
+    void saveTextFile('start_live_stream_mac.sh', script, 'text/x-sh');
   };
 
   const handleDownloadWindowsScript = () => {
     if (!activePlaylist) return;
     if (!streamKeyInput.trim()) {
-      alert('Please paste your Stream Key before downloading the batch script!');
+      notify('Please paste your Stream Key before downloading the batch script!');
       return;
     }
     const rtmpUrl = defaultRtmpUrls[selectedPlatform];
@@ -175,13 +173,7 @@ export const DashboardView: React.FC = () => {
       hardwareAcc === 'VideoToolbox' ? 'NVENC' : hardwareAcc
     );
 
-    const blob = new Blob([script], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `start_live_stream_windows.bat`;
-    a.click();
-    URL.revokeObjectURL(url);
+    void saveTextFile('start_live_stream_windows.bat', script, 'text/plain');
   };
 
   return (
@@ -193,7 +185,7 @@ export const DashboardView: React.FC = () => {
             <Radio className="w-6 h-6 text-indigo-400 animate-pulse" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-white tracking-tight">Stream Dashboard</h2>
+            <h2 className="text-xl font-bold text-studio-foreground tracking-tight">Stream Dashboard</h2>
             <p className="text-xs text-slate-400">
               One-Click FFmpeg Broadcast Engine • {instances.filter((i) => i.status === 'live').length} Active Instance(s)
             </p>
@@ -271,22 +263,22 @@ export const DashboardView: React.FC = () => {
                   <span>Bitrate</span>
                   <Activity className="w-3.5 h-3.5 text-indigo-400" />
                 </div>
-                <div className="text-lg font-bold font-mono text-white">
+                <div className="text-lg font-bold font-mono text-studio-foreground">
                   {(activeInstance.metrics.bitrateKbps / 1000).toFixed(2)}{' '}
                   <span className="text-xs font-normal text-slate-400">Mbps</span>
                 </div>
-                <div className="text-[10px] text-emerald-400 font-mono mt-1">Target: 4.5 Mbps</div>
+                <div className="text-[10px] text-emerald-400 font-mono mt-1">Target: {((activeInstance.targetBitrate || 4500)/1000).toFixed(1)} Mbps</div>
               </div>
 
               <div className="bg-slate-900/70 border border-slate-800 p-4 rounded-xl">
                 <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
-                  <span>Network Health</span>
+                  <span>Output Health</span>
                   {activeInstance.metrics.connectionQuality === 'Excellent' ? <Radio className="w-3.5 h-3.5 text-emerald-400" /> :
                    activeInstance.metrics.connectionQuality === 'Good' ? <Radio className="w-3.5 h-3.5 text-blue-400" /> :
                    activeInstance.metrics.connectionQuality === 'Fair' ? <Radio className="w-3.5 h-3.5 text-amber-400 animate-pulse" /> :
                    <Radio className="w-3.5 h-3.5 text-red-500 animate-pulse" />}
                 </div>
-                <div className="text-lg font-bold font-mono text-white flex items-baseline space-x-1">
+                <div className="text-lg font-bold font-mono text-studio-foreground flex items-baseline space-x-1">
                   <span>{activeInstance.metrics.connectionQuality || 'Stable'}</span>
                 </div>
                 <div className={`text-[10px] font-mono mt-1 ${activeInstance.metrics.droppedFrames > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
@@ -299,10 +291,10 @@ export const DashboardView: React.FC = () => {
                   <span>Encoder / Speed</span>
                   <Cpu className="w-3.5 h-3.5 text-amber-400" />
                 </div>
-                <div className="text-lg font-bold font-mono text-white">
-                  {activeInstance.metrics.uploadSpeedMbps ? `${activeInstance.metrics.uploadSpeedMbps.toFixed(2)}x` : '1.0x'}
+                <div className="text-lg font-bold font-mono text-studio-foreground">
+                  {activeInstance.metrics.encodingSpeed!==undefined ? `${activeInstance.metrics.encodingSpeed.toFixed(2)}x` : 'Waiting'}
                 </div>
-                <div className="text-[10px] text-indigo-300 font-mono mt-1">{activeInstance.hardwareAcc} Encoder</div>
+                <div className="text-[10px] text-indigo-300 font-mono mt-1">{encoderLabel(activeInstance.hardwareAcc,activeInstance.outputMode)} Encoder</div>
               </div>
 
               <div className="bg-slate-900/70 border border-slate-800 p-4 rounded-xl">
@@ -310,10 +302,10 @@ export const DashboardView: React.FC = () => {
                   <span>Output Stream</span>
                   <Radio className="w-3.5 h-3.5 text-emerald-400" />
                 </div>
-                <div className="text-lg font-bold font-mono text-white">
+                <div className="text-lg font-bold font-mono text-studio-foreground">
                   {useStudioStore.getState().settings?.outputResolution || '1080p'}
                 </div>
-                <div className="text-[10px] text-slate-400 font-mono mt-1">{activeInstance.metrics.fps || 30} FPS</div>
+                <div className="text-[10px] text-slate-400 font-mono mt-1">{activeInstance.metrics.fps ?? 0} FPS</div>
               </div>
 
               <div className="bg-slate-900/70 border border-slate-800 p-4 rounded-xl">
@@ -321,7 +313,7 @@ export const DashboardView: React.FC = () => {
                   <span>System Resource</span>
                   <HardDrive className="w-3.5 h-3.5 text-sky-400" />
                 </div>
-                <div className="text-lg font-bold font-mono text-white">
+                <div className="text-lg font-bold font-mono text-studio-foreground">
                   {activeInstance.metrics.cpuPercent || 0}% <span className="text-xs font-normal text-slate-400">CPU</span>
                 </div>
                 <div className="text-[10px] text-emerald-400 font-mono mt-1">{activeInstance.metrics.memoryMb || 0} MB Memory</div>
@@ -401,26 +393,7 @@ export const DashboardView: React.FC = () => {
                   <span>Stream Key</span>
                   <span className="text-[10px] text-amber-400 font-mono">* Required to go live</span>
                 </label>
-                <div className="relative flex items-center">
-                  <Key className="w-3.5 h-3.5 text-slate-500 absolute left-3 z-10" />
-                  <input
-                    type={showStreamKey ? 'text' : 'password'}
-                    required
-                    value={streamKeyInput}
-                    onChange={(e) => setStreamKeyInput(e.target.value)}
-                    onPaste={handleStreamKeyPaste}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-10 py-2 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-500 placeholder-slate-600 select-all"
-                    placeholder="Paste your YouTube / Facebook Stream Key here..."
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowStreamKey(!showStreamKey)}
-                    className="absolute right-2.5 text-slate-500 hover:text-slate-200 p-1"
-                    title={showStreamKey ? 'Hide Stream Key' : 'Show Stream Key'}
-                  >
-                    {showStreamKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
+                <StreamKeyInput value={streamKeyInput} onChange={setStreamKeyInput} label="Stream key" required />
               </div>
 
               <div>
@@ -430,7 +403,7 @@ export const DashboardView: React.FC = () => {
                   onChange={(e) => setHardwareAcc(e.target.value as HardwareAcceleration)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500 font-mono"
                 >
-                  <option value="Auto">Auto-detect best encoder</option>
+                  <option value="Auto">Auto (stable bitrate)</option>
                   <option value="VideoToolbox">Apple VideoToolbox (GPU)</option>
                   <option value="NVENC">NVIDIA NVENC (GPU)</option>
                   <option value="QuickSync">Intel QuickSync (GPU)</option>

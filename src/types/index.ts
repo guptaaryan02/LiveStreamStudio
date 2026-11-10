@@ -30,6 +30,7 @@ export interface VideoItem {
   normalizedPath?: string;
   /** Output profile the rendition was built for, e.g. "1920x1080@30-4500k-VideoToolbox". */
   normalizedProfile?: string;
+  streamReadyProfile?: {version:number;width:number;height:number;fps:number;bitrateKbps:number};
 }
 
 export type PlayOrder = 'ascending' | 'descending' | 'random';
@@ -59,6 +60,7 @@ export interface StreamMetrics {
   cpuPercent: number;
   memoryMb: number;
   uploadSpeedMbps: number;
+  encodingSpeed?: number;
   connectionQuality: 'Excellent' | 'Good' | 'Fair' | 'Poor';
 }
 
@@ -81,12 +83,28 @@ export interface StreamInstance {
   retryAttempts: number;
   maxRetries: number;
   startTime?: string;
+  scheduledStopTime?: string;
+  playbackLoopLimit?: number; // total complete playlist passes for this run
+  lastFailure?: string;
+  lastStopReason?: string;
+  stoppedAt?: string;
+  scheduleId?: string;
   uptimeSeconds: number;
   /** Seconds of encoded video queued for upload (playout engine only). */
   bufferSeconds?: number;
+  pipelineId?: string;
+  sharedDestinations?: number;
+  outputMode?: 'copy'|'encode';
+  analyticsLastSampleAt?: number;
+  lastOutputAt?: number;
+  analyticsStarted?: boolean;
+  analyticsRecovering?: boolean;
+  stopping?: boolean;
+  slowOutputSince?: number;
 }
 
 export interface StreamProfile {
+  keyStorage?: 'session' | 'keychain'; // undefined: older profile, load only on request
   id: string;
   name: string;
   playlistId: string;
@@ -102,15 +120,19 @@ export interface StreamProfile {
 }
 
 export interface ScheduleItem {
+  createdAt?: string;
   id: string;
   title: string;
   profileId: string;
   profileName: string;
-  scheduledTime: string; // HH:mm or ISO
+  scheduledAt?: string; // ISO timestamp for a one-time launch
+  scheduledTime: string; // local HH:mm or legacy HH:mm AM/PM
   repeatDays: string[]; // ['Mon', 'Wed', 'Fri'] or ['Daily']
   autoStart: boolean;
   autoStop: boolean;
   stopAfterMinutes?: number;
+  stopMode?: 'time' | 'loops'; // absent on older schedules means time
+  stopAfterLoops?: number;
   isActive: boolean;
   lastRunDate?: string;
 }
@@ -141,15 +163,24 @@ export interface AppSettings {
   useCustomFfmpeg: boolean;
   hardwareAcc: HardwareAcceleration;
   defaultBitrateKbps: number;
+  /** Opt-in remux: retains source bitrate instead of the configured target. */
+  useSourceBitrate?: boolean;
   autoRecoveryEnabled: boolean;
   outputResolution?: OutputResolution;
   outputFps?: OutputFps;
   retryIntervalSeconds: number;
   maxRetryCount: number;
   desktopNotifications: boolean;
+  sharedEncodingEnabled?: boolean;
+  pausePreviewByDefault?: boolean;
 }
 
 export interface StreamAnalyticsSummary {
+  version: number;
+  totalLiveSeconds: number;
+  totalObservedSeconds: number;
+  bitrateKbpsSeconds: number;
+  dailySeconds: Record<string, number>;
   totalStreamsRun: number;
   totalHoursStreamed: number;
   averageBitrateKbps: number;

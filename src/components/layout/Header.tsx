@@ -1,9 +1,10 @@
+import { encoderLabel } from '../../services/streamHealth';
 import React from 'react';
 import { useStudioStore } from '../../store/useStudioStore';
 import { Radio, Cpu, HardDrive, Zap, Bell, Moon, Sun, PlusCircle, Activity } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { instances, settings, updateSettings, setActiveTab } = useStudioStore();
+  const { instances, settings, analytics, updateSettings, setActiveTab } = useStudioStore();
   const liveCount = instances.filter((i) => i.status === 'live').length;
   const totalCpu = instances
     .filter((i) => i.status === 'live')
@@ -19,15 +20,15 @@ export const Header: React.FC = () => {
       <div className="flex items-center space-x-4">
         <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('dashboard')}>
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-red-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Radio className="w-6 h-6 text-white animate-pulse" />
+            <Radio className="w-6 h-6 text-studio-foreground animate-pulse" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <h1 className="text-lg font-bold text-white tracking-tight leading-none">
+              <h1 className="text-lg font-bold text-studio-foreground tracking-tight leading-none">
                 LiveStream<span className="text-indigo-400">Studio</span>
               </h1>
               <span className="text-[10px] uppercase tracking-widest font-mono font-semibold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                v2.4 Pro
+                v1.0.10
               </span>
             </div>
             <p className="text-xs text-slate-400 leading-tight">One-Click FFmpeg Live Streaming</p>
@@ -49,7 +50,7 @@ export const Header: React.FC = () => {
 
           <div className="flex items-center space-x-1.5 text-xs text-indigo-300 font-mono">
             <Zap className="w-3.5 h-3.5 text-amber-400" />
-            <span>{settings.hardwareAcc}</span>
+            <span>{Array.from(new Set(instances.filter((i)=>['live','connecting'].includes(i.status)).map((i)=>encoderLabel(i.hardwareAcc,i.outputMode)))).join(' + ') || encoderLabel(settings.hardwareAcc)}</span>
           </div>
         </div>
       </div>
@@ -70,7 +71,7 @@ export const Header: React.FC = () => {
           <span className="text-slate-700">|</span>
           <div className="flex items-center space-x-1.5">
             <Activity className="w-3.5 h-3.5 text-emerald-400" />
-            <span>99.9% Stable</span>
+            <span>{analytics.totalObservedSeconds ? `${analytics.streamStabilityPercent.toFixed(1)}% Output` : 'No output history'}</span>
           </div>
         </div>
 
@@ -87,14 +88,14 @@ export const Header: React.FC = () => {
         <div className="flex items-center space-x-2 border-l border-slate-800 pl-4">
           <button
             onClick={() => updateSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' })}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-lg transition"
+            className="p-2 text-slate-400 hover:text-studio-foreground hover:bg-slate-800/60 rounded-lg transition"
             title="Toggle Theme"
           >
             {settings.theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
           </button>
           <button
             onClick={() => setActiveTab('logs')}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-lg transition relative"
+            className="p-2 text-slate-400 hover:text-studio-foreground hover:bg-slate-800/60 rounded-lg transition relative"
             title="Notifications & Logs"
           >
             <Bell className="w-4 h-4" />

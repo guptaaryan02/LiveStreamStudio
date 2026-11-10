@@ -32,4 +32,6 @@ npm-debug.log*
 
 # Local secrets — stream keys must never be committed
 .env
-.env.local
+.env.*
+!.env.example
+!.env.sample

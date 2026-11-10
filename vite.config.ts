@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { constantBitrateFlags, sanitizeLogMessage } from './src/services/ffmpegEngine';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -165,7 +166,7 @@ const pipeClipIntoBuffer = (
   ffmpegBin: string,
   onSpawn?: (child: ChildProcess) => void
 ): Promise<number> =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
     const fps = config.fps || 30;
     const gop = String(Math.max(2, fps * 2));
     const bitrate = config.bitrateKbps || 4500;
@@ -179,20 +180,26 @@ const pipeClipIntoBuffer = (
       ffmpegBin,
       [
         '-hide_banner', '-nostdin',
-        '-i', clip,
+        '-copyts', '-start_at_zero', '-i', clip,
+        ...(config.hasAudio === false
+          ? ['-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', '-map', '0:v:0', '-map', '1:a:0', '-shortest']
+          : ['-map', '0:v:0', '-map', '0:a:0']),
         '-vf',
         `scale=${config.width}:${config.height}:force_original_aspect_ratio=decrease,pad=${config.width}:${config.height}:(ow-iw)/2:(oh-ih)/2,fps=${fps},format=yuv420p`,
         '-af', 'aresample=async=1,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo',
         '-fps_mode', 'cfr',
         ...(encoder[config.hardwareAcc] || ['-c:v', 'libx264', '-preset', 'veryfast']),
+        ...constantBitrateFlags(config.hardwareAcc || 'Auto'),
+        '-bf', '0',
         '-b:v', `${bitrate}k`,
+        '-minrate', `${bitrate}k`,
         '-maxrate', `${bitrate}k`,
         '-bufsize', `${bitrate * 2}k`,
         '-g', gop,
         '-keyint_min', gop,
         '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
         '-bsf:v', 'h264_mp4toannexb',
-        '-output_ts_offset', tsOffset.toFixed(3),
+        '-output_ts_offset', (tsOffset + 0.1).toFixed(6),
         '-muxdelay', '0',
         '-f', 'mpegts', 'pipe:1',
       ],
@@ -207,13 +214,13 @@ const pipeClipIntoBuffer = (
       return;
     }
 
-    let encodedSeconds = 0;
+    let encodedFrames = 0;
     child.stderr?.on('data', (chunk) => {
-      const match = /time=(\d+):(\d+):([\d.]+)/g;
+      const match = /frame=\s*(\d+)/g;
       let m: RegExpExecArray | null;
       const text = chunk.toString();
       while ((m = match.exec(text)) !== null) {
-        encodedSeconds = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+        encodedFrames = Number(m[1]);
       }
     });
 
@@ -224,10 +231,11 @@ const pipeClipIntoBuffer = (
     const onBufferClose = () => child.kill();
     buffer.once('close', onBufferClose);
 
-    child.on('error', () => resolve(0));
-    child.on('close', () => {
+    child.on('error', reject);
+    child.on('close', (code) => {
       buffer.removeListener('close', onBufferClose);
-      resolve(encodedSeconds);
+      if (code !== 0 || encodedFrames === 0) { reject(new Error('Clip encoder failed')); return; }
+      resolve(encodedFrames / fps);
     });
   });
 
@@ -294,6 +302,19 @@ export default defineConfig({
             console.error('[Files] pick failed:', e);
             sendJson(res, 500, { error: e.message || String(e) });
           }
+        });
+
+        server.middlewares.use('/api/files/probe', async (req, res, next) => {
+          if (req.method !== 'POST') return next();
+          try {
+            const { path: filePath } = await readJsonBody(req);
+            if (!path.isAbsolute(String(filePath || '')) || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+              sendJson(res, 400, { error: 'Video file does not exist. Enter an absolute local path.' }); return;
+            }
+            const probe = await probeFile(filePath, resolveBinary('ffprobe'));
+            if (!probe.metadata?.video_codec) { sendJson(res, 400, { error: 'This file has no playable video track.' }); return; }
+            sendJson(res, 200, { ...probe.metadata, duration: probe.duration, size_mb: fs.statSync(filePath).size / (1024 * 1024) });
+          } catch (error) { sendJson(res, 400, { error: String(error) }); }
         });
 
         // Maps dropped browser files (name + size only) back to real disk paths.
@@ -495,7 +516,11 @@ export default defineConfig({
               return;
             }
 
-            const ffmpegBin = resolveBinary('ffmpeg');
+            const ffmpegBin = resolveBinary('ffmpeg', config.ffmpegPath);
+            if (activeFFmpegProcesses.has(streamId)) {
+              sendJson(res, 409, { success: false, error: 'This instance is already running' });
+              return;
+            }
             const sender = spawn(
               ffmpegBin,
               [
@@ -505,14 +530,14 @@ export default defineConfig({
                 '-i', 'pipe:0',
                 '-c', 'copy',
                 '-flvflags', 'no_duration_filesize',
-                '-f', 'flv', config.rtmpTarget,
+                '-f', 'flv', '-rw_timeout', '15000000', config.rtmpTarget,
               ],
               { stdio: ['pipe', 'ignore', 'pipe'] }
             );
 
             let senderError = '';
             sender.on('error', (err) => (senderError = err.message));
-            sender.stderr?.on('data', (d) => console.log(`[Playout ${streamId}]: ${d}`));
+            sender.stderr?.on('data', (d) => console.log(`[Playout ${streamId}]: ${sanitizeLogMessage(String(d))}`));
             activeFFmpegProcesses.set(streamId, sender);
 
             // ~8s of encoded output absorbs clip transitions and encoder stalls.
@@ -542,21 +567,26 @@ export default defineConfig({
             // Feed clips sequentially, looping the whole playlist.
             (async () => {
               let tsOffset = 0;
-              const frameGap = 1 / (config.fps || 30);
+
               const passes = config.loopForever ? Infinity : Math.max(1, config.repeatCount || 1);
 
               for (let pass = 0; pass < passes && !stopped; pass++) {
                 for (const clip of clips) {
                   if (stopped || !buffer.writable) { stopped = true; break; }
+                  const ffprobeBin = resolveBinary('ffprobe', config.ffmpegPath ? path.join(path.dirname(config.ffmpegPath), 'ffprobe') : undefined);
+                  const clipInfo = await probeFile(clip, ffprobeBin);
                   tsOffset +=
-                    (await pipeClipIntoBuffer(clip, config, tsOffset, buffer, ffmpegBin, (child) => {
+                    (await pipeClipIntoBuffer(clip, { ...config, hasAudio: !!clipInfo.metadata?.audio_codec }, tsOffset, buffer, ffmpegBin, (child) => {
                       currentClipProcess = child;
                       if (stopped) child.kill('SIGKILL');
-                    })) + frameGap;
+                    }));
                 }
               }
               if (buffer.writable) buffer.end();
-            })().catch((e) => console.error(`[Playout ${streamId}] feeder stopped:`, e));
+            })().catch((e) => {
+              console.error(`[Playout ${streamId}] feeder stopped:`, e);
+              stopped = true; sender.kill('SIGKILL'); buffer.destroy();
+            });
 
             await new Promise((resolve) => setTimeout(resolve, 200));
             if (senderError) {

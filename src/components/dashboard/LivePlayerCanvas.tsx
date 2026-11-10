@@ -1,3 +1,4 @@
+import { saveTextFile } from '../../services/uiFeedback';
 import React, { useState, useRef, useEffect } from 'react';
 import { StreamInstance, VideoItem, Playlist } from '../../types';
 import { Play, Pause, Volume2, VolumeX, Maximize2, Radio, Activity, RefreshCw, Download, FileCode, CheckCircle2 } from 'lucide-react';
@@ -12,7 +13,8 @@ interface LivePlayerCanvasProps {
 
 export const LivePlayerCanvas: React.FC<LivePlayerCanvasProps> = ({ instance, playlist, onSimulateDrop }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isPlaying, setIsPlaying] = useState(true);
+  const loadedSource=useRef('');
+  const [isPlaying, setIsPlaying] = useState(()=>useStudioStore.getState().settings.pausePreviewByDefault===false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0.8);
   const [currentTime, setCurrentTime] = useState(0);
@@ -41,15 +43,15 @@ export const LivePlayerCanvas: React.FC<LivePlayerCanvasProps> = ({ instance, pl
   // Handle video source changes
   useEffect(() => {
     if (videoRef.current && currentVideo) {
-      videoRef.current.src = currentVideo.filePath;
-      videoRef.current.load(); // Force load first frame metadata when paused
-      if (isLive || isPlaying) {
+      if(!isPlaying){videoRef.current.pause();setDuration(currentVideo.duration);if(loadedSource.current && loadedSource.current!==currentVideo.filePath){videoRef.current.removeAttribute('src');videoRef.current.load();loadedSource.current='';}return;}
+      if(loadedSource.current!==currentVideo.filePath){videoRef.current.src = currentVideo.filePath;videoRef.current.load();loadedSource.current=currentVideo.filePath;}
+      if (isPlaying) {
         videoRef.current.play().catch(() => {
           // Autoplay blocked by browser policy until user interaction
         });
       }
     }
-  }, [currentVideo?.filePath, activeIndex, isLive]);
+  }, [currentVideo?.filePath, activeIndex, isLive, isPlaying]);
 
   // Handle Play/Pause state changes
   useEffect(() => {
@@ -153,29 +155,24 @@ export const LivePlayerCanvas: React.FC<LivePlayerCanvasProps> = ({ instance, pl
         .map((log) => ({ ...log, message: sanitizeLogMessage(log.message) }))
     };
 
-    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `livestream_diagnostics_${instance.id.substring(0,6)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    void saveTextFile(`livestream_diagnostics_${instance.id.substring(0,6)}.json`, JSON.stringify(bundle, null, 2), 'application/json');
   };
 
   return (
-    <div className="relative w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-2xl group select-none">
+    <div className="studio-preview relative w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-2xl group select-none">
       {/* Real HTML5 Video Player */}
       <div className="relative aspect-video w-full flex items-center justify-center overflow-hidden bg-black">
         <video
           ref={videoRef}
           playsInline
-          preload="auto"
-          autoPlay={isLive}
+          preload="none"
+          autoPlay={isPlaying}
           onTimeUpdate={handleTimeUpdate}
           onEnded={handleVideoEnded}
           className="w-full h-full object-contain"
         />
 
+        {!isPlaying && <div className="absolute inset-0 flex items-center justify-center"><p className="rounded bg-black/70 p-3 text-xs text-white">Preview paused to save resources · press Play below. Broadcast output continues independently.</p></div>}
         {/* Dark Gradient Overlays */}
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-slate-950/60 pointer-events-none" />
 
@@ -243,9 +240,9 @@ export const LivePlayerCanvas: React.FC<LivePlayerCanvasProps> = ({ instance, pl
               <div className="text-xs text-indigo-400 font-mono font-semibold tracking-wide flex items-center space-x-2">
                 <span>Video {activeIndex + 1} of {videoList.length}</span>
                 <span>•</span>
-                <span>Loop {instance.currentRepeatCount}</span>
+                <span>Loop {instance.playbackLoopLimit ? `${Math.min(instance.currentRepeatCount, instance.playbackLoopLimit)} of ${instance.playbackLoopLimit}` : instance.currentRepeatCount}</span>
               </div>
-              <h3 className="text-sm font-bold text-white tracking-tight line-clamp-1">
+              <h3 className="text-sm font-bold text-studio-foreground tracking-tight line-clamp-1">
                 {currentVideo?.title || 'No video loaded'}
               </h3>
             </div>
@@ -277,16 +274,18 @@ export const LivePlayerCanvas: React.FC<LivePlayerCanvasProps> = ({ instance, pl
           <div className="flex items-center justify-between pt-1">
             <div className="flex items-center space-x-3">
               <button
+                aria-label={isPlaying ? "Pause preview" : "Play preview"}
                 onClick={() => setIsPlaying(!isPlaying)}
-                className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-md transition"
+                className="p-1.5 text-slate-300 hover:text-studio-foreground hover:bg-slate-800/60 rounded-md transition"
               >
                 {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
               </button>
 
               <div className="flex items-center space-x-2">
                 <button
+                  aria-label={isMuted ? "Unmute preview" : "Mute preview"}
                   onClick={() => setIsMuted(!isMuted)}
-                  className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-md transition"
+                  className="p-1.5 text-slate-300 hover:text-studio-foreground hover:bg-slate-800/60 rounded-md transition"
                 >
                   {isMuted || volume === 0 ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
                 </button>
@@ -311,7 +310,7 @@ export const LivePlayerCanvas: React.FC<LivePlayerCanvasProps> = ({ instance, pl
 
             <button
               onClick={handleFullscreen}
-              className="p-1.5 text-slate-400 hover:text-white rounded-md transition"
+              className="p-1.5 text-slate-400 hover:text-studio-foreground rounded-md transition"
               title="Fullscreen Player"
             >
               <Maximize2 className="w-4 h-4" />

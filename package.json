@@ -1,7 +1,7 @@
 {
   "name": "livestream-studio",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.10",
   "description": "Tauri desktop studio for reliable multi-destination 24/7 livestream playout.",
   "type": "module",
   "scripts": {
@@ -10,10 +10,13 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "test": "node scripts/test.mjs",
+    "package:mac": "bash scripts/package-macos.sh"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-notification": "2.4.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.453.0",
     "react": "^18.3.1",
