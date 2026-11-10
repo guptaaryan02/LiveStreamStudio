@@ -14,6 +14,10 @@ A Tauri desktop app for playing local video playlists as live RTMP broadcasts to
 
 Keep the desktop app running for scheduled streams. Locking the screen is supported. Actual sleep requires a configured wake alarm; shutdown and logout are not supported. YouTube broadcasts need Auto-start enabled to publish automatically when the encoder connects.
 
+## Public website
+
+The landing page is hosted at [stream.b2r.it.com](http://stream.b2r.it.com/). Pushes to `main` build the Vite site and deploy `dist/` through the GitHub Pages workflow. The browser opens the landing page by default; the desktop app opens the studio.
+
 ## Development
 
 Install Node.js 20 or newer, Rust stable, and the platform prerequisites for Tauri 2. Then run:
