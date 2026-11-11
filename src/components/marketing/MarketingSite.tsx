@@ -139,7 +139,7 @@ function DownloadCounter({ compact = false }: { compact?: boolean }) {
   return <aside className={`download-counter ${compact ? 'download-counter-compact' : ''}`} aria-label="Download statistics">
     <div className="counter-head"><Download size={19} /><strong>{fresh === null ? '—' : format(DOWNLOAD_COUNTER_BASELINE + fresh)}</strong><span>Launch counter</span></div>
     <p>{fresh === null ? failed ? 'Download statistics are temporarily unavailable.' : 'Loading download statistics…' : `999 starting baseline + ${format(fresh)} new installer downloads.`}</p>
-    {stats && <><div className="counter-measured"><span><strong>{format(stats.total)}</strong> recorded installer downloads</span>{!compact && <div><span>macOS <b>{format(stats.mac)}</b></span><span>Windows <b>{format(stats.windows)}</b></span><span>Linux <b>{format(stats.linux)}</b></span></div>}</div>{!compact && <small>Across published versions. Includes repeat and test downloads; not unique users. Refreshes every minute.{failed ? ' Last recorded values shown; refresh is unavailable.' : ''}</small>}</>}
+    {stats && <><div className="counter-measured"><span><strong>{format(stats.total)}</strong> recorded installer downloads</span>{!compact && <div><span>macOS <b>{format(stats.mac)}</b></span><span>Windows <b>{format(stats.windows)}</b></span><span>Linux <b>{format(stats.linux)}</b></span></div>}</div>{!compact && <small>Across published versions. Includes repeat and test downloads; not unique users. Refreshes every minute; download-provider updates may be delayed.{failed ? ' Last recorded values shown; refresh is unavailable.' : ''}</small>}</>}
   </aside>;
 }
 function DownloadPage() {
