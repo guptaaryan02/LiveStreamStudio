@@ -1,68 +1,77 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Activity, Apple, ArrowDown, ArrowRight, CalendarClock, Check, ChevronDown, CircleHelp, Cpu, Download, ExternalLink, FolderOpen, Mail, Layers, Menu, Moon, Play, Radio, Repeat2, ShieldCheck, SlidersHorizontal, Sun, Terminal, Wifi, X } from 'lucide-react';
 import './marketing.css';
-import { DOWNLOAD_COUNTER_BASELINE, DOWNLOADS_AT_COUNTER_LAUNCH, loadDownloadStats, type DownloadStats } from '../../services/downloadStats';
+import { USE_CASES, type UseCase } from './useCases';
+import { SITE_PAGES, pageUrl, type Page } from './sitePages';
 
 type InstallPlatform = 'mac' | 'windows' | 'linux';
-type Page = `download/${InstallPlatform}` | 'home' | 'download' | 'support' | 'brand' | 'release-notes' | 'licenses';
 const SUPPORT = 'support@b2r.it.com';
 const BRAND = '/brand/';
 const getPage = (): Page => {
-  const route = window.location.hash.replace('#/', '').split('?')[0];
-  return route === 'download/mac' || route === 'download/windows' || route === 'download/linux' || route === 'download' || route === 'support' || route === 'brand' || route === 'release-notes' || route === 'licenses' ? route : 'home';
+  if (typeof window === 'undefined') return 'home';
+  const route = window.location.hash.startsWith('#/') ? window.location.hash.slice(2).split('?')[0] : window.location.pathname.replace(/^\/|\/$/g, '');
+  return Object.prototype.hasOwnProperty.call(SITE_PAGES, route) ? route as Page : 'home';
 };
-const go = (page: Page) => { window.location.hash = page === 'home' ? '/' : `/${page}`; };
+const ReleaseContext = createContext<Release | null>(null);
 const Mark = ({ className = '' }: { className?: string }) => <img src={`${BRAND}livestream-studio-mark.svg`} alt="" className={`brand-mark ${className}`} />;
 const Wordmark = () => <span className="brand-wordmark"><strong>LiveStream<span> Studio</span></strong><small>BY B2R</small></span>;
 const Brand = () => <><Mark /><Wordmark /></>;
 
-export const MarketingSite: React.FC = () => {
+export const MarketingSite: React.FC<{ initialPage?: Page; initialRelease?: Release | null }> = ({ initialPage, initialRelease = null }) => {
   const scrollArea = useRef<HTMLDivElement>(null);
-  const [page, setPage] = useState<Page>(getPage);
+  const [page, setPage] = useState<Page>(initialPage || getPage);
   const [menuOpen, setMenuOpen] = useState(false);
   const [dark, setDark] = useState(() => { try { return localStorage.getItem('livestream-marketing-theme') === 'dark'; } catch { return false; } });
-  useEffect(() => { const change = () => setPage(getPage()); window.addEventListener('hashchange', change); return () => window.removeEventListener('hashchange', change); }, []);
-  useEffect(() => { scrollArea.current?.scrollTo({ top: 0, behavior: 'instant' }); setMenuOpen(false); }, [page]);
+  useEffect(() => {
+    const change = () => {
+      if (window.location.hash.startsWith('#/')) window.location.replace(pageUrl(getPage()));
+      else setPage(getPage());
+    };
+    change();
+    window.addEventListener('hashchange', change);
+    return () => window.removeEventListener('hashchange', change);
+  }, []);
+  useEffect(() => {
+    const fragment = window.location.hash.slice(1);
+    const target = fragment && !fragment.startsWith('/') ? document.getElementById(fragment) : null;
+    if (target) target.scrollIntoView({ behavior: 'instant' });
+    else scrollArea.current?.scrollTo({ top: 0, behavior: 'instant' });
+    setMenuOpen(false);
+  }, [page]);
   useEffect(() => { try { localStorage.setItem('livestream-marketing-theme', dark ? 'dark' : 'light'); } catch { /* storage may be disabled */ } }, [dark]);
   useEffect(() => { const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); }; window.addEventListener('keydown', escape); return () => window.removeEventListener('keydown', escape); }, []);
-  const section = (id: string) => {
-    setMenuOpen(false);
-    if (page !== 'home') { go('home'); requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }))); }
-    else document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-  };
-  return <div ref={scrollArea} className="b2r-site" data-color-mode={dark ? 'dark' : 'light'}>
+  return <ReleaseContext.Provider value={initialRelease}><div ref={scrollArea} className="b2r-site" data-color-mode={dark ? 'dark' : 'light'}>
     <a className="skip-link" href="#main-content">Skip to content</a>
     <header className="site-header">
-      <button className="brand" aria-label="LiveStream Studio by B2R, home" onClick={() => go('home')}><Brand /></button>
-      <nav className={`site-nav ${menuOpen ? 'is-open' : ''}`} aria-label="Main navigation" id="main-navigation">
-        <button onClick={() => section('features')}>Features</button><button onClick={() => section('how-it-works')}>How it works</button><button onClick={() => section('faq')}>FAQ</button>
-        <button onClick={() => go('support')}>Support</button>
+      <a className="brand" aria-label="LiveStream Studio by B2R, home" href={pageUrl('home')}> <Brand /></a>
+      <nav className={`site-nav ${menuOpen ? 'is-open' : ''}`} aria-label="Main navigation" id="main-navigation" onClick={event => { if ((event.target as Element).closest('a')) setMenuOpen(false); }}>
+        <a href="/#features">Features</a><a href="/#how-it-works">How it works</a><a href="/#faq">FAQ</a>
+        <a href={pageUrl('support')}> Support</a>
       </nav>
       <div className="header-actions"><button className="theme-button" onClick={() => setDark(!dark)} aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}>{dark ? <Sun size={18} /> : <Moon size={18} />}</button>
-        <button className="button button-primary header-download" onClick={() => go('download')}>Get the app <ArrowRight size={15} /></button>
+        <a className="button button-primary header-download" href={pageUrl('download')}> Get the app <ArrowRight size={15} /></a>
         <button className="mobile-menu" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen} aria-controls="main-navigation" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X /> : <Menu />}</button></div>
     </header>
     <main id="main-content" tabIndex={-1}>
-      {page === 'home' ? <HomePage onSection={section} /> : page.startsWith('download/') ? <InstallPage platform={page.split('/')[1] as InstallPlatform} /> : page === 'download' ? <DownloadPage /> : page === 'brand' ? <BrandPage /> : page === 'release-notes' ? <ReleaseNotesPage /> : page === 'licenses' ? <LicensesPage /> : <SupportPage />}
+      {page === 'home' ? <HomePage /> : page in USE_CASES ? <UseCasePage topic={page as UseCase} /> : page.startsWith('download/') ? <InstallPage platform={page.split('/')[1] as InstallPlatform} /> : page === 'download' ? <DownloadPage /> : page === 'brand' ? <BrandPage /> : page === 'release-notes' ? <ReleaseNotesPage /> : page === 'licenses' ? <LicensesPage /> : <SupportPage />}
     </main>
-    <footer className="site-footer"><div className="footer-top"><div><button className="brand" aria-label="LiveStream Studio by B2R, home" onClick={() => go('home')}><Brand /></button><p>A little less setup.<br />A lot more time on air.</p></div>
-      <div><h3>PRODUCT</h3><button onClick={() => section('features')}>Features</button><button onClick={() => go('download')}>Downloads</button><button onClick={() => go('release-notes')}>Release notes</button></div>
-      <div><h3>HELP & RESOURCES</h3><button onClick={() => section('faq')}>Common questions</button><button onClick={() => go('support')}>Get support</button><button onClick={() => go('brand')}>Brand & logo</button><button onClick={() => go('licenses')}>Third-party licences</button></div>
+    <footer className="site-footer"><div className="footer-top"><div><a className="brand" aria-label="LiveStream Studio by B2R, home" href={pageUrl('home')}> <Brand /></a><p>A little less setup.<br />A lot more time on air.</p></div>
+      <div><h3>PRODUCT</h3><a href="/#features">Features</a><a href={pageUrl('download')}> Downloads</a><a href={pageUrl('release-notes')}> Release notes</a></div>
+      <div><h3>HELP & RESOURCES</h3><a href="/#faq">Common questions</a><a href={pageUrl('support')}> Get support</a><a href={pageUrl('brand')}> Brand & logo</a><a href={pageUrl('licenses')}> Third-party licences</a></div>
       <div><h3>MORE FROM B2R</h3><a href="https://b2r.it.com/" target="_blank" rel="noreferrer">Explore B2R <ArrowRight size={13} /></a><a href="https://pramvex.com/" target="_blank" rel="noreferrer">Pramvex <span>Private AI workspace</span></a><a href="https://voidcutpro.com/" target="_blank" rel="noreferrer">VoidCut Pro <span>Video editing</span></a><a href="https://caption-cut.com/" target="_blank" rel="noreferrer">Caption Cut <span>Offline subtitles</span></a></div></div>
       <div className="footer-bottom"><p>© {new Date().getFullYear()} B2R. LiveStream Studio is a B2R product.</p><span><i /> Made for creators. Built by B2R.</span></div>
     </footer>
-  </div>;
+  </div></ReleaseContext.Provider>;
 };
 
-const HomePage = ({ onSection }: { onSection: (id: string) => void }) => <>
+const HomePage = () => <>
   <section className="hero"><div className="hero-grid" aria-hidden="true" /><div className="hero-inner">
     <div className="eyebrow hero-eyebrow"><span className="live-dot" /> YOUR CHANNEL. ALWAYS ON.</div>
     <h1>Your videos.<br />An always-on <span>livestream.</span></h1>
-    <p className="hero-copy">Turn the videos you’ve already made into a channel that keeps playing.<br className="desktop-break" /> Playlists, schedules and multiple streams. One simple studio.</p>
-    <div className="hero-actions"><button className="button button-primary button-large" onClick={() => go('download')}><Download size={18} /> Get LiveStream Studio</button><button className="text-button" onClick={() => onSection('how-it-works')}>See how it works <ArrowRight size={17} /></button></div>
+    <p className="hero-copy">Turn finished video playlists into an always-on livestream.<br className="desktop-break" /> Schedule broadcasts and stream to multiple channels from your computer.</p>
+    <div className="hero-actions"><a className="button button-primary button-large" href={pageUrl('download')}> <Download size={18} /> Get LiveStream Studio</a><a className="text-button" href="/#how-it-works">See how it works <ArrowRight size={17} /></a></div>
     <p className="hero-meta">DESKTOP APP <span>·</span> NO SUBSCRIPTION <span>·</span> A PRODUCT BY B2R</p>
     <div className="trust-pills"><span><ShieldCheck /> Your keys stay yours</span><span><Repeat2 /> Continuous playlists</span><span><Layers /> Multiple destinations</span></div>
-    <DownloadCounter compact />
     <StudioPreview />
     <div className="platform-row"><span>YOUR CONTENT. YOUR PLATFORM.</span><div><span className="youtube-mark"><Play size={12} fill="currentColor" /></span>YouTube</div><div><strong className="facebook-mark">f</strong>Facebook</div><div><span className="twitch-mark">▣</span>Twitch</div><div><Radio size={19} /> Custom RTMP</div></div>
   </div></section>
@@ -75,6 +84,11 @@ const HomePage = ({ onSection }: { onSection: (id: string) => void }) => <>
       <Feature icon={<ShieldCheck />} title="Your setup stays with you." text="Local videos. Session-only keys by default. Optional macOS Keychain storage when you choose to save a key." label="YOUR CONTROL" />
     </div>
   </section>
+  <section className="section use-case-section"><div className="section-heading"><p className="eyebrow">FIND YOUR BROADCAST</p><h2>Start with what<br /><span>you want to stream.</span></h2></div><div className="use-case-grid">{[
+    ['free-live-streaming-software', 'Free livestreaming software', 'Loop and schedule finished video playlists on your own computer.'],
+    ['youtube-live-streaming', 'Go live on YouTube', 'Prepare your broadcast, stream key and automatic start.'],
+    ['multistream', 'Stream to multiple channels', 'Send different playlists or the same program to several destinations.'],
+  ].map(([page, title, text]) => <a className="feature-card use-case-card" key={page} href={pageUrl(page as Page)}><h3>{title}</h3><p>{text}</p><span className="text-button">Read the guide <ArrowRight size={16} /></span></a>)}</div></section>
   <section className="workflow-section" id="how-it-works"><div className="section workflow-inner"><div className="section-heading"><p className="eyebrow">FROM FOLDER TO LIVE</p><h2>Set the stage.<br /><span>Let it play.</span></h2><p>No terminal commands. No complicated scenes.<br />Just your content and a place to send it.</p></div><div className="workflow-steps">{[
     { icon: <FolderOpen />, title: 'Bring your videos.', text: 'Add local files to your library. Create a playlist and make the order yours.' },
     { icon: <SlidersHorizontal />, title: 'Make it your stream.', text: 'Choose an output, add the stream key and set your loop or schedule.' },
@@ -87,14 +101,19 @@ const HomePage = ({ onSection }: { onSection: (id: string) => void }) => <>
     ['Is this a cloud service or a video editor?', <>It is a desktop app for broadcasting pre-recorded video playlists. Bring finished videos. It does not host your streams in the cloud, edit videos, capture your screen or switch live camera scenes. For video editing, try our <a href="https://voidcutpro.com/" target="_blank" rel="noreferrer">VoidCut Pro video editor</a>, another B2R product.</>],
     ['Who makes LiveStream Studio?', 'LiveStream Studio is a B2R product. We build practical tools for creators, including Pramvex for private AI work and Caption Cut for offline subtitles.'],
   ].map(([question, answer]) => <details key={String(question)}><summary>{question}<ChevronDown size={17} /></summary><p>{answer}</p></details>)}</div></section>
-  <section className="closing-section"><div className="closing-glow" /><Mark /><p className="eyebrow">MADE FOR YOUR NEXT BROADCAST</p><h2>Your content deserves<br /><span>more time on air.</span></h2><p>Give your videos an encore. Then another.</p><button className="button button-primary button-large" onClick={() => go('download')}>Get LiveStream Studio <ArrowRight size={18} /></button><span className="closing-signature">A B2R PRODUCT</span></section>
+  <section className="closing-section"><div className="closing-glow" /><Mark /><p className="eyebrow">MADE FOR YOUR NEXT BROADCAST</p><h2>Your content deserves<br /><span>more time on air.</span></h2><p>Give your videos an encore. Then another.</p><a className="button button-primary button-large" href={pageUrl('download')}> Get LiveStream Studio <ArrowRight size={18} /></a><span className="closing-signature">A B2R PRODUCT</span></section>
 </>;
+
+function UseCasePage({ topic }: { topic: UseCase }) {
+  const guide = USE_CASES[topic];
+  return <section className="section subpage use-case-page"><div className="section-heading"><p className="eyebrow">{guide.eyebrow}</p><h1>{guide.heading}</h1><p>{guide.intro}</p></div><div className="hero-actions"><a className="button button-primary" href="/download/"><Download size={17} />Download LiveStream Studio</a><a className="text-button" href="/support/">Ask B2R support <ArrowRight size={16} /></a></div><article className="guide-content"><h2>{guide.title}</h2>{guide.paragraphs.map(text => <p key={text}>{text}</p>)}<h2>Get started.</h2><ol>{guide.steps.map(text => <li key={text}>{text}</li>)}</ol><h2>{guide.detailTitle}</h2>{guide.details.map(text => <p key={text}>{text}</p>)}<h2>Common questions.</h2><div className="faq-list">{guide.faq.map(([question,answer]) => <details key={question}><summary>{question}<ChevronDown size={17} /></summary><p>{answer}</p></details>)}</div></article><nav className="related-guides" aria-label="Related streaming guides">{(Object.keys(USE_CASES) as UseCase[]).filter(key => key !== topic).map(key => <a className="text-button" key={key} href={pageUrl(key)}>{SITE_PAGES[key].title.split(' | ')[0]}<ArrowRight size={15} /></a>)}</nav><a className="button button-primary" href="/download/">Choose your download <ArrowRight size={16} /></a></section>;
+}
 
 function StudioPreview() {
   return <figure className="studio-showcase real-studio-showcase">
     <figcaption className="showcase-caption"><span><span className="live-dot" /> THE REAL LIVESTREAM STUDIO APP</span><span>MACOS · VERSION 1.0.10</span></figcaption>
     <a className="real-app-frame" href="/screenshots/livestream-studio-dashboard.png" target="_blank" rel="noreferrer" aria-label="View the real LiveStream Studio dashboard screenshot at full size">
-      <img src="/screenshots/livestream-studio-dashboard.png" alt="Real LiveStream Studio 1.0.10 desktop app showing a local Golden Hour Sessions video, playlist selection and stream controls. Demo workspace with no active broadcast." width="2880" height="1612" decoding="async" />
+      <img fetchPriority="high" src="/screenshots/livestream-studio-dashboard.png" alt="Real LiveStream Studio 1.0.10 desktop app showing a local Golden Hour Sessions video, playlist selection and stream controls. Demo workspace with no active broadcast." width="2880" height="1612" decoding="async" />
       <span className="screenshot-expand">View full size <ExternalLink size={13} /></span>
     </a>
     <div className="showcase-note"><span><Check size={13} /> Captured from the desktop app. Demo video; no live broadcast.</span><span>LiveStream Studio by B2R</span></div>
@@ -106,51 +125,33 @@ function Feature({ icon, title, text, label, className = '', children }: { icon:
 }
 
 interface ReleaseAsset { name: string; browser_download_url: string; size: number; digest?: string }
-interface Release { tag_name: string; assets: ReleaseAsset[]; body?: string }
+export interface Release { tag_name: string; assets: ReleaseAsset[]; body?: string }
 function usePublicRelease() {
-  const [release, setRelease] = useState<Release | null>(null);
-  const [state, setState] = useState<'loading' | 'ready' | 'unavailable' | 'error'>('loading');
+  const initial = useContext(ReleaseContext);
+  const [release, setRelease] = useState<Release | null>(initial);
+  const [state, setState] = useState<'loading' | 'ready' | 'unavailable' | 'error'>(initial ? 'ready' : 'loading');
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-    const timeout = window.setTimeout(() => { if (active) { setState('error'); controller.abort(); } }, 15000);
+    const timeout = window.setTimeout(() => { if (active) { setState(initial ? 'ready' : 'error'); controller.abort(); } }, 15000);
     void fetch('https://api.github.com/repos/guptaaryan02/LiveStreamStudio-releases/releases/latest', { signal: controller.signal }).then(async r => {
-      if (r.status === 404) { if (active) setState('unavailable'); return; }
+      if (r.status === 404) { if (active) setState(initial ? 'ready' : 'unavailable'); return; }
       if (!r.ok) throw new Error('Release information unavailable');
       const data = await r.json();
       if (active) { setRelease({ tag_name: data.tag_name, body: data.body || '', assets: (data.assets || []).filter((a: ReleaseAsset) => a.browser_download_url.startsWith('https://github.com/guptaaryan02/LiveStreamStudio-releases/releases/download/')) }); setState('ready'); }
-    }).catch(e => { if (active && e.name !== 'AbortError') setState('error'); }).finally(() => window.clearTimeout(timeout));
+    }).catch(e => { if (active && e.name !== 'AbortError') setState(initial ? 'ready' : 'error'); }).finally(() => window.clearTimeout(timeout));
     return () => { active = false; window.clearTimeout(timeout); controller.abort(); };
   }, []);
   return { release, state };
-}
-function DownloadCounter({ compact = false }: { compact?: boolean }) {
-  const [stats, setStats] = useState<DownloadStats | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let active = true;
-    const refresh = () => { void loadDownloadStats().then(value => { if (active) { setStats(value); setFailed(false); } }).catch(() => { if (active) setFailed(true); }); };
-    refresh();
-    const interval = window.setInterval(refresh, 60_000);
-    return () => { active = false; window.clearInterval(interval); };
-  }, []);
-  const fresh = stats ? Math.max(0, stats.total - DOWNLOADS_AT_COUNTER_LAUNCH) : null;
-  const format = (value: number) => value.toLocaleString('en-US');
-  return <aside className={`download-counter ${compact ? 'download-counter-compact' : ''}`} aria-label="Download statistics">
-    <div className="counter-head"><Download size={19} /><strong>{fresh === null ? '—' : format(DOWNLOAD_COUNTER_BASELINE + fresh)}</strong><span>Launch counter</span></div>
-    <p>{fresh === null ? failed ? 'Download statistics are temporarily unavailable.' : 'Loading download statistics…' : `999 starting baseline + ${format(fresh)} new installer downloads.`}</p>
-    {stats && <><div className="counter-measured"><span><strong>{format(stats.total)}</strong> recorded installer downloads</span>{!compact && <div><span>macOS <b>{format(stats.mac)}</b></span><span>Windows <b>{format(stats.windows)}</b></span><span>Linux <b>{format(stats.linux)}</b></span></div>}</div>{!compact && <small>Across published versions. Includes repeat and test downloads; not unique users. Refreshes every minute; download-provider updates may be delayed.{failed ? ' Last recorded values shown; refresh is unavailable.' : ''}</small>}</>}
-  </aside>;
 }
 function DownloadPage() {
   const { release, state } = usePublicRelease();
   const [download, setDownload] = useState('');
   const platforms = [{ id: 'mac' as const, name: 'macOS', icon: <Apple />, note: 'Apple Silicon · M1 and later', match: /aarch64\.dmg$/i }, { id: 'windows' as const, name: 'Windows', icon: <span className="windows-icon">⊞</span>, note: '64-bit desktop installer', match: /x64.*(?:setup\.exe|\.msi)$/i }, { id: 'linux' as const, name: 'Linux', icon: <Terminal />, note: 'x86_64 · Portable AppImage', match: /amd64\.AppImage$/i }];
-  return <section className="section subpage download-page"><div className="section-heading centered"><p className="eyebrow">YOUR NEXT BROADCAST STARTS HERE</p><h1>Make room<br />for <span>your studio.</span></h1><p>Local videos. Your channels. A desktop app by B2R.</p></div>
+  return <section className="section subpage download-page"><div className="section-heading centered"><p className="eyebrow">YOUR NEXT BROADCAST STARTS HERE</p><h1>Download<br /><span>LiveStream Studio.</span></h1><p>Local videos. Your channels. A desktop app by B2R.</p></div>
     <div className="release-notice" role="status"><Download size={19} /><div>{download ? `Your ${download} installer download is starting.` : state === 'loading' ? 'Checking published installers…' : state === 'ready' ? `Latest release: ${release?.tag_name}` : state === 'unavailable' ? 'Public installers are being prepared.' : 'Download information is temporarily unavailable.'}<p>{state === 'unavailable' ? 'The download buttons will be enabled as soon as the installers are ready.' : 'Choose your platform to download the installer without leaving this page.'}</p></div></div>
-    <DownloadCounter />
-    <div className="download-grid">{platforms.map(platform => { const asset = release?.assets.find(a => platform.match.test(a.name)); return <article className="download-card" key={platform.name}><span className="platform-icon">{platform.icon}</span><h2>{platform.name}</h2><p>{platform.note}</p>{asset ? <><span className="download-version">{release?.tag_name} · {(asset.size / 1048576).toFixed(0)} MB</span><a className="button button-primary" href={asset.browser_download_url} download={asset.name} onClick={() => setDownload(platform.name)}><Download size={16} />Download for {platform.name}</a></> : <><span className="download-version">{state === 'loading' ? 'Checking availability' : 'Installer coming soon'}</span><button className="button button-secondary" disabled>{state === 'loading' ? 'Checking…' : 'Preparing installer'}</button></>}<a className="text-button install-guide-link" href={`#/download/${platform.id}`}>Installation guide <ArrowRight size={15} /></a></article>; })}</div>
-    <div className="download-guidance"><div><ShieldCheck /><h3>Install with confidence.</h3><p>Review release notes, system requirements and signing status before installing. For uninterrupted broadcasts, update after your current stream ends.</p></div><div><CalendarClock /><h3>See what’s new.</h3><p>Read the latest improvements and platform notes here.</p><button className="text-button" onClick={() => go('release-notes')}>Release notes <ArrowRight size={15} /></button></div></div>
+    <div className="download-grid">{platforms.map(platform => { const asset = release?.assets.find(a => platform.match.test(a.name)); return <article className="download-card" key={platform.name}><span className="platform-icon">{platform.icon}</span><h2>{platform.name}</h2><p>{platform.note}</p>{asset ? <><span className="download-version">{release?.tag_name} · {(asset.size / 1048576).toFixed(0)} MB</span><a className="button button-primary" href={asset.browser_download_url} download={asset.name} onClick={() => setDownload(platform.name)}><Download size={16} />Download for {platform.name}</a></> : <><span className="download-version">{state === 'loading' ? 'Checking availability' : 'Installer coming soon'}</span><button className="button button-secondary" disabled>{state === 'loading' ? 'Checking…' : 'Preparing installer'}</button></>}<a className="text-button install-guide-link" href={pageUrl(`download/${platform.id}`)}>Installation guide <ArrowRight size={15} /></a></article>; })}</div>
+    <div className="download-guidance"><div><ShieldCheck /><h3>Install with confidence.</h3><p>Review release notes, system requirements and signing status before installing. For uninterrupted broadcasts, update after your current stream ends.</p></div><div><CalendarClock /><h3>See what’s new.</h3><p>Read the latest improvements and platform notes here.</p><a className="text-button" href={pageUrl('release-notes')}> Release notes <ArrowRight size={15} /></a></div></div>
   </section>;
 }
 
@@ -167,7 +168,7 @@ function InstallPage({ platform }: { platform: InstallPlatform }) {
   const file = asset?.name;
   const verify = file ? platform === 'mac' ? `shasum -a 256 ~/Downloads/${file}` : platform === 'windows' ? `Get-FileHash "$env:USERPROFILE\\Downloads\\${file}" -Algorithm SHA256` : `sha256sum ~/Downloads/${file}` : '';
   return <section className="section subpage install-page">
-    <a className="text-button" href="#/download">All downloads <ArrowRight size={15} /></a>
+    <a className="text-button" href="/download/">All downloads <ArrowRight size={15} /></a>
     <div className="section-heading"><p className="eyebrow">DOWNLOAD & INSTALL</p><h1>Your studio.<br /><span>For {info.name}.</span></h1><p>{info.note}</p></div>
     <div className="install-download"><div><strong>{release?.tag_name || 'LiveStream Studio'}</strong><p>{asset ? `${(asset.size / 1048576).toFixed(0)} MB · ${asset.name}` : state === 'loading' ? 'Checking published installers…' : 'Installer information is temporarily unavailable. Please try again.'}</p></div>{asset && <a className="button button-primary" href={asset.browser_download_url} download={asset.name}><Download size={16} />Download for {info.name}</a>}</div>
     {alternatives.length > 0 && <div className="install-alternatives"><span>Other formats:</span>{alternatives.map(a => <a className="text-button" key={a.name} href={a.browser_download_url} download={a.name}>Download .{a.name.split('.').pop()} <ArrowDown size={14} /></a>)}</div>}
@@ -176,8 +177,8 @@ function InstallPage({ platform }: { platform: InstallPlatform }) {
       <article><p className="eyebrow">02 · FIRST LAUNCH</p><h2>{platform === 'windows' ? 'About the blue screen.' : platform === 'mac' ? 'When macOS asks.' : 'Ready for your first stream.'}</h2>{platform === 'mac' ? <><p>This release is not notarized by Apple, so macOS may block the first launch.</p><ol><li>Try opening the app once.</li><li>Open <strong>System Settings → Privacy & Security</strong>.</li><li>Find the LiveStream Studio message and choose <strong>Open Anyway</strong>, then confirm.</li></ol><details className="install-troubleshoot"><summary>If macOS says the app “is damaged”</summary><p>First verify your download below and place the app in Applications. For a verified copy downloaded here, run this app-specific command in Terminal, then open the app again:</p><Command text={'xattr -dr com.apple.quarantine "/Applications/LiveStream Studio.app"'} /><p>This removes the quarantine flag only from LiveStream Studio. It does not notarize the app or turn off Gatekeeper for your Mac. If the checksum differs or macOS reports malware, stop and contact support.</p></details></> : platform === 'windows' ? <><p>The installer is not code-signed. Windows may show a blue <strong>“Windows protected your PC”</strong> SmartScreen message.</p><ol><li>Verify the downloaded file using the checksum below.</li><li>In the SmartScreen message, select <strong>More info</strong>.</li><li>Check the app name, then select <strong>Run anyway</strong> to continue with this installer.</li></ol><p>This is a first-launch reputation warning, not a Windows crash. Do not disable Defender or SmartScreen. If Windows reports malware, or your organisation blocks installation, contact support or your administrator.</p></> : <><p>Launch the AppImage directly, or open LiveStream Studio from your applications menu after installing a DEB or RPM.</p><p>Add local videos, create a playlist and enter your destination’s stream key. FFmpeg is included; no separate encoder installation is needed.</p></>}</article>
       <article><p className="eyebrow">03 · VERIFY YOUR DOWNLOAD</p><h2>Check the file.</h2><p>Run this in {platform === 'windows' ? 'PowerShell' : 'Terminal'} and compare the SHA-256 with the published value. They must match exactly.</p>{verify && <Command text={verify} />}{asset?.digest?.startsWith('sha256:') && <div className="checksum-value"><span>SHA-256 · {asset.name}</span><code>{asset.digest.slice(7)}</code></div>}{release?.assets.find(a => a.name === 'SHA256SUMS.txt') && <a className="text-button" href={release.assets.find(a => a.name === 'SHA256SUMS.txt')!.browser_download_url} download="SHA256SUMS.txt">Download checksums for all packages <ArrowDown size={14} /></a>}<p>A matching checksum confirms that the file matches our published release. Only continue with a copy you downloaded from this website.</p></article>
     </div>
-    <div className="install-next"><h2>Keep your broadcast running.</h2><p>Update after your current stream ends. Keep the app open and your internet connected while broadcasting or waiting for a schedule.</p><a className="text-button" href="#/support">Need help? <ArrowRight size={15} /></a></div>
-    <nav className="install-platforms" aria-label="Other platforms">{(Object.keys(INSTALL_INFO) as InstallPlatform[]).filter(p => p !== platform).map(p => <a className="button button-secondary" key={p} href={`#/download/${p}`}>Get it for {INSTALL_INFO[p].name} <ArrowRight size={15} /></a>)}</nav>
+    <div className="install-next"><h2>Keep your broadcast running.</h2><p>Update after your current stream ends. Keep the app open and your internet connected while broadcasting or waiting for a schedule.</p><a className="text-button" href="/support/">Need help? <ArrowRight size={15} /></a></div>
+    <nav className="install-platforms" aria-label="Other platforms">{(Object.keys(INSTALL_INFO) as InstallPlatform[]).filter(p => p !== platform).map(p => <a className="button button-secondary" key={p} href={pageUrl(`download/${p}`)}>Get it for {INSTALL_INFO[p].name} <ArrowRight size={15} /></a>)}</nav>
   </section>;
 }
 function Command({ text }: { text: string }) {
@@ -190,7 +191,7 @@ function Command({ text }: { text: string }) {
 
 function ReleaseNotesPage() {
   const { release, state } = usePublicRelease();
-  return <section className="section subpage"><div className="section-heading centered"><p className="eyebrow">LIVESTREAM STUDIO BY B2R</p><h1>What’s <span>new.</span></h1><p>{release ? release.tag_name : state === 'loading' ? 'Loading release notes…' : 'Release notes will appear when the next version is published.'}</p></div>{release && <article className="release-notes-body">{release.body}</article>}<div className="centered-action"><button className="button button-primary" onClick={() => go('download')}>Download the app <Download size={16} /></button></div></section>;
+  return <section className="section subpage"><div className="section-heading centered"><p className="eyebrow">LIVESTREAM STUDIO BY B2R</p><h1>What’s <span>new.</span></h1><p>{release ? release.tag_name : state === 'loading' ? 'Loading release notes…' : 'Release notes will appear when the next version is published.'}</p></div>{release && <article className="release-notes-body">{release.body}</article>}<div className="centered-action"><a className="button button-primary" href={pageUrl('download')}> Download the app <Download size={16} /></a></div></section>;
 }
 function LicensesPage() { return <section className="section subpage"><div className="section-heading centered"><p className="eyebrow">THIRD-PARTY SOFTWARE</p><h1>Licences &amp;<br /><span>acknowledgements.</span></h1><p>LiveStream Studio includes FFmpeg and FFprobe as separate programs. The bundled builds include GPL components such as libx264.</p></div><article className="release-notes-body"><h2>FFmpeg</h2><p>Licence texts, build provenance and source-availability information are included with each installer.</p><a className="text-button" href="/licenses/ffmpeg-license.txt" download>Download the FFmpeg notice <Download size={16} /></a><p>Visit the FFmpeg project for its documentation and source code.</p><a className="text-button" href="https://ffmpeg.org/" target="_blank" rel="noreferrer">FFmpeg project <ExternalLink size={14} /></a></article></section>; }
 function SupportPage() { return <section className="section subpage support-page"><div className="section-heading centered"><p className="eyebrow">WE’RE HERE TO HELP</p><h1>A better broadcast.<br /><span>Built together.</span></h1><p>LiveStream Studio is a B2R product, made for creators.<br />Your feedback helps us make it better.</p></div><div className="support-grid"><article className="feature-card"><CircleHelp className="feature-icon" /><h2>Need a hand?</h2><p>Tell us your operating system, what you were trying to do and what happened. Remove stream keys before sharing logs or screenshots.</p><a className="button button-primary" href={`mailto:${SUPPORT}?subject=LiveStream%20Studio%20support`}>Email support@b2r.it.com <ArrowRight size={16} /></a></article><article className="feature-card"><Mail className="feature-icon" /><h2>Make it better.</h2><p>Found a bug or have an idea for your workflow? Email our team at support@b2r.it.com.</p><a className="button button-secondary" href={`mailto:${SUPPORT}?subject=LiveStream%20Studio%20feedback`}>Share feedback by email <ArrowRight size={16} /></a></article></div><div className="b2r-family"><p className="eyebrow">PART OF THE B2R FAMILY</p><h2>Useful tools.<br /><span>Thoughtfully made.</span></h2><p>Explore more tools for your creative work.</p><a className="text-button" href="https://b2r.it.com/" target="_blank" rel="noreferrer">Discover B2R <ArrowRight size={17} /></a></div></section>; }

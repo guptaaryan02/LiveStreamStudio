@@ -2,9 +2,6 @@
 export interface DownloadStats { total: number; mac: number; windows: number; linux: number }
 interface CountedAsset { id: number; name: string; download_count: number; state: string }
 interface CountedRelease { draft: boolean; assets: CountedAsset[] }
-export const DOWNLOAD_COUNTER_BASELINE = 999;
-// Six installer downloads were recorded when this counter was introduced.
-export const DOWNLOADS_AT_COUNTER_LAUNCH = 6;
 export function aggregateDownloadStats(releases: CountedRelease[]): DownloadStats {
   const counts: DownloadStats = { total: 0, mac: 0, windows: 0, linux: 0 };
   const seen = new Set<number>();

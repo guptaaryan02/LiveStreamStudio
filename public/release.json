@@ -1,0 +1,48 @@
+{
+  "tag_name": "v1.0.10",
+  "body": "LiveStream Studio 1.0.10\nA B2R desktop app for broadcasting pre-recorded playlists.\n\nWHAT\u2019S NEW\n\u2022 New B2R logo and app icon.\n\u2022 Fixed a video-clock reset that could cause audio/video drift when a clip\u2019s colour metadata changes during repeated playback.\n\u2022 Edit existing schedules and stopped stream destinations.\n\u2022 Editable daily start times, with time limits or complete-playlist loop limits.\n\u2022 Paste stream keys while they remain hidden.\n\u2022 Explicit, optional key storage and improved reconnect diagnostics.\n\u2022 Prepared-media playback and shared encoding for matching destinations.\n\nDOWNLOADS\nChoose your platform at https://stream.b2r.it.com/#/download. The installer starts downloading directly from the button.\n\nPLATFORMS\nmacOS: Apple Silicon. Locally built DMG, ad-hoc signed and not Developer ID notarized.\nWindows: 64-bit EXE/MSI installers. Not Authenticode signed.\nLinux: x86_64 AppImage, DEB and RPM packages. Bundled FFmpeg requires a compatible glibc-based system.\n\nUPDATE NOTES\nFinish your current broadcast before updating. Keep the desktop app open for scheduled streams and prepare session keys after restarting. macOS wake alarms are platform-specific; other systems must stay awake for scheduled starts.\n\nThird-party licence notices and FFmpeg build/source information are included with the app. SHA256SUMS.txt lists the hashes of the installers attached to this release.\n",
+  "assets": [
+    {
+      "name": "LiveStream.Studio-1.0.10-1.x86_64.rpm",
+      "size": 144604287,
+      "digest": "sha256:a447b6c6c6cdda2ac2bef18a33bf3cc824026fd76e4f2dd99186a226f276a5aa",
+      "browser_download_url": "https://github.com/guptaaryan02/LiveStreamStudio-releases/releases/download/v1.0.10/LiveStream.Studio-1.0.10-1.x86_64.rpm"
+    },
+    {
+      "name": "LiveStream.Studio_1.0.10_aarch64.dmg",
+      "size": 54333585,
+      "digest": "sha256:f2eef452edb7efad77f16ac50e5f67b4a18d00a1c9d13dd5787358a23ce5bea8",
+      "browser_download_url": "https://github.com/guptaaryan02/LiveStreamStudio-releases/releases/download/v1.0.10/LiveStream.Studio_1.0.10_aarch64.dmg"
+    },
+    {
+      "name": "LiveStream.Studio_1.0.10_amd64.AppImage",
+      "size": 208718328,
+      "digest": "sha256:ad3d45a80214f47dff75982bdd16b5ce1850821a0bacb2b9474b56216bc2f3be",
+      "browser_download_url": "https://github.com/guptaaryan02/LiveStreamStudio-releases/releases/download/v1.0.10/LiveStream.Studio_1.0.10_amd64.AppImage"
+    },
+    {
+      "name": "LiveStream.Studio_1.0.10_amd64.deb",
+      "size": 144597084,
+      "digest": "sha256:bee570a6becb5c06048140d3173ec350aae0101f1970ed1f6f034d684472b43a",
+      "browser_download_url": "https://github.com/guptaaryan02/LiveStreamStudio-releases/releases/download/v1.0.10/LiveStream.Studio_1.0.10_amd64.deb"
+    },
+    {
+      "name": "LiveStream.Studio_1.0.10_x64-setup.exe",
+      "size": 95879455,
+      "digest": "sha256:832ba17b5bd71ef1efb08bf6aa283d63d5709233be46b89a51272cc0a2195c73",
+      "browser_download_url": "https://github.com/guptaaryan02/LiveStreamStudio-releases/releases/download/v1.0.10/LiveStream.Studio_1.0.10_x64-setup.exe"
+    },
+    {
+      "name": "LiveStream.Studio_1.0.10_x64_en-US.msi",
+      "size": 131293184,
+      "digest": "sha256:b07faac93ab7c1a41a75c67281d595eafc519a71b7c3648b65a65926ba7c8d41",
+      "browser_download_url": "https://github.com/guptaaryan02/LiveStreamStudio-releases/releases/download/v1.0.10/LiveStream.Studio_1.0.10_x64_en-US.msi"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "size": 624,
+      "digest": "sha256:1a0790421567f03ddad670bea099f4774eb8a217470e0a08178fbeb29cfff398",
+      "browser_download_url": "https://github.com/guptaaryan02/LiveStreamStudio-releases/releases/download/v1.0.10/SHA256SUMS.txt"
+    }
+  ]
+}

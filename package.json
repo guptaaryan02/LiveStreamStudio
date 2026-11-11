@@ -12,7 +12,9 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "test": "node scripts/test.mjs",
-    "package:mac": "bash scripts/package-macos.sh"
+    "package:mac": "bash scripts/package-macos.sh",
+    "build:site": "npm run build && node scripts/build-site.mjs",
+    "test:site": "node scripts/test-site.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
