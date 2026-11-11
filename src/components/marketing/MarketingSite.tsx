@@ -92,7 +92,7 @@ function StudioPreview() {
   return <figure className="studio-showcase real-studio-showcase">
     <figcaption className="showcase-caption"><span><span className="live-dot" /> THE REAL LIVESTREAM STUDIO APP</span><span>MACOS · VERSION 1.0.10</span></figcaption>
     <a className="real-app-frame" href="/screenshots/livestream-studio-dashboard.png" target="_blank" rel="noreferrer" aria-label="View the real LiveStream Studio dashboard screenshot at full size">
-      <img src="/screenshots/livestream-studio-dashboard.png" alt="Real LiveStream Studio 1.0.10 desktop app showing a local Golden Hour Sessions video, playlist selection and stream controls. Demo workspace with no active broadcast." width="2880" height="1684" decoding="async" />
+      <img src="/screenshots/livestream-studio-dashboard.png" alt="Real LiveStream Studio 1.0.10 desktop app showing a local Golden Hour Sessions video, playlist selection and stream controls. Demo workspace with no active broadcast." width="2880" height="1612" decoding="async" />
       <span className="screenshot-expand">View full size <ExternalLink size={13} /></span>
     </a>
     <div className="showcase-note"><span><Check size={13} /> Captured from the desktop app. Demo video; no live broadcast.</span><span>LiveStream Studio by B2R</span></div>
