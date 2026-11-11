@@ -529,3 +529,17 @@ test('editing a schedule updates it in place and leaves running stream limits un
   assert.equal(store.getState().schedules[0].scheduledTime,'05:15');assert.equal(store.getState().schedules[0].stopAfterLoops,10);
   assert.equal(store.getState().instances[0].status,'live');assert.equal(store.getState().instances[0].playbackLoopLimit,3);
 });
+
+import { aggregateDownloadStats } from '../src/services/downloadStats';
+test('download statistics count installers across versions without counting checksum files, draft assets or duplicates', () => {
+  const asset = (id:number,name:string,download_count:number,state='uploaded') => ({id,name,download_count,state});
+  const oldMac = asset(1,'Studio_1.0.9_aarch64.dmg',10);
+  assert.deepEqual(aggregateDownloadStats([
+    {draft:false,assets:[oldMac,asset(2,'Studio_x64-setup.exe',3),asset(3,'SHA256SUMS.txt',700)]},
+    {draft:false,assets:[oldMac,asset(4,'Studio_amd64.AppImage',4),asset(5,'Studio_amd64.deb',2),asset(6,'Studio.x86_64.rpm',1),asset(7,'Studio_x64.msi',2),asset(8,'pending.dmg',99,'starter')]},
+    {draft:true,assets:[asset(9,'draft.dmg',1000)]},
+  ]),{total:22,mac:10,windows:5,linux:7});
+});
+test('download statistics keep real zero and reject invalid counts', () => {
+  assert.deepEqual(aggregateDownloadStats([{draft:false,assets:[{id:1,name:'app.dmg',download_count:-1,state:'uploaded'},{id:2,name:'app.exe',download_count:NaN,state:'uploaded'}]}]),{total:0,mac:0,windows:0,linux:0});
+});
