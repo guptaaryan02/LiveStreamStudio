@@ -2,13 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Activity, Apple, ArrowDown, ArrowRight, CalendarClock, Check, ChevronDown, CircleHelp, Cpu, Download, ExternalLink, FolderOpen, Github, Layers, Menu, Moon, Play, Radio, Repeat2, ShieldCheck, SlidersHorizontal, Sun, Terminal, Wifi, X } from 'lucide-react';
 import './marketing.css';
 
-type Page = 'home' | 'download' | 'support' | 'brand' | 'release-notes' | 'licenses';
+type InstallPlatform = 'mac' | 'windows' | 'linux';
+type Page = `download/${InstallPlatform}` | 'home' | 'download' | 'support' | 'brand' | 'release-notes' | 'licenses';
 const REPO = 'https://github.com/guptaaryan02/LiveStreamStudio';
 const RELEASES = 'https://github.com/guptaaryan02/LiveStreamStudio-releases/releases';
 const BRAND = '/brand/';
 const getPage = (): Page => {
   const route = window.location.hash.replace('#/', '').split('?')[0];
-  return route === 'download' || route === 'support' || route === 'brand' || route === 'release-notes' || route === 'licenses' ? route : 'home';
+  return route === 'download/mac' || route === 'download/windows' || route === 'download/linux' || route === 'download' || route === 'support' || route === 'brand' || route === 'release-notes' || route === 'licenses' ? route : 'home';
 };
 const go = (page: Page) => { window.location.hash = page === 'home' ? '/' : `/${page}`; };
 const Mark = ({ className = '' }: { className?: string }) => <img src={`${BRAND}livestream-studio-mark.svg`} alt="" className={`brand-mark ${className}`} />;
@@ -21,7 +22,7 @@ export const MarketingSite: React.FC = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [dark, setDark] = useState(() => { try { return localStorage.getItem('livestream-marketing-theme') === 'dark'; } catch { return false; } });
   useEffect(() => { const change = () => setPage(getPage()); window.addEventListener('hashchange', change); return () => window.removeEventListener('hashchange', change); }, []);
-  useEffect(() => { scrollArea.current?.scrollTo({ top: 0 }); setMenuOpen(false); }, [page]);
+  useEffect(() => { scrollArea.current?.scrollTo({ top: 0, behavior: 'instant' }); setMenuOpen(false); }, [page]);
   useEffect(() => { try { localStorage.setItem('livestream-marketing-theme', dark ? 'dark' : 'light'); } catch { /* storage may be disabled */ } }, [dark]);
   useEffect(() => { const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); }; window.addEventListener('keydown', escape); return () => window.removeEventListener('keydown', escape); }, []);
   const section = (id: string) => {
@@ -42,7 +43,7 @@ export const MarketingSite: React.FC = () => {
         <button className="mobile-menu" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen} aria-controls="main-navigation" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X /> : <Menu />}</button></div>
     </header>
     <main id="main-content" tabIndex={-1}>
-      {page === 'home' ? <HomePage onSection={section} /> : page === 'download' ? <DownloadPage /> : page === 'brand' ? <BrandPage /> : page === 'release-notes' ? <ReleaseNotesPage /> : page === 'licenses' ? <LicensesPage /> : <SupportPage />}
+      {page === 'home' ? <HomePage onSection={section} /> : page.startsWith('download/') ? <InstallPage platform={page.split('/')[1] as InstallPlatform} /> : page === 'download' ? <DownloadPage /> : page === 'brand' ? <BrandPage /> : page === 'release-notes' ? <ReleaseNotesPage /> : page === 'licenses' ? <LicensesPage /> : <SupportPage />}
     </main>
     <footer className="site-footer"><div className="footer-top"><div><button className="brand" aria-label="LiveStream Studio by B2R, home" onClick={() => go('home')}><Brand /></button><p>A little less setup.<br />A lot more time on air.</p></div>
       <div><h3>PRODUCT</h3><button onClick={() => section('features')}>Features</button><button onClick={() => go('download')}>Downloads</button><button onClick={() => go('release-notes')}>Release notes</button></div>
@@ -103,7 +104,7 @@ function Feature({ icon, title, text, label, className = '', children }: { icon:
   return <article className={`feature-card ${className}`}><span className="feature-icon">{icon}</span><p className="feature-label">{label}</p><h3>{title}</h3><p>{text}</p>{children}</article>;
 }
 
-interface ReleaseAsset { name: string; browser_download_url: string; size: number }
+interface ReleaseAsset { name: string; browser_download_url: string; size: number; digest?: string }
 interface Release { tag_name: string; assets: ReleaseAsset[]; body?: string }
 function usePublicRelease() {
   const [release, setRelease] = useState<Release | null>(null);
@@ -125,13 +126,48 @@ function usePublicRelease() {
 function DownloadPage() {
   const { release, state } = usePublicRelease();
   const [download, setDownload] = useState('');
-  const platforms = [{ name: 'macOS', icon: <Apple />, note: 'Apple Silicon · M1 and later', match: /aarch64\.dmg$/i }, { name: 'Windows', icon: <span className="windows-icon">⊞</span>, note: '64-bit desktop installer', match: /x64.*(?:setup\.exe|\.msi)$/i }, { name: 'Linux', icon: <Terminal />, note: 'x86_64 · Portable AppImage', match: /amd64\.AppImage$/i }];
+  const platforms = [{ id: 'mac' as const, name: 'macOS', icon: <Apple />, note: 'Apple Silicon · M1 and later', match: /aarch64\.dmg$/i }, { id: 'windows' as const, name: 'Windows', icon: <span className="windows-icon">⊞</span>, note: '64-bit desktop installer', match: /x64.*(?:setup\.exe|\.msi)$/i }, { id: 'linux' as const, name: 'Linux', icon: <Terminal />, note: 'x86_64 · Portable AppImage', match: /amd64\.AppImage$/i }];
   return <section className="section subpage download-page"><div className="section-heading centered"><p className="eyebrow">YOUR NEXT BROADCAST STARTS HERE</p><h1>Make room<br />for <span>your studio.</span></h1><p>Local videos. Your channels. A desktop app by B2R.</p></div>
     <div className="release-notice" role="status"><Download size={19} /><div>{download ? `Your ${download} installer download is starting.` : state === 'loading' ? 'Checking published installers…' : state === 'ready' ? `Latest release: ${release?.tag_name}` : state === 'unavailable' ? 'Public installers are being prepared.' : 'Download information is temporarily unavailable.'}<p>{state === 'unavailable' ? 'The download buttons will be enabled as soon as the installers are ready.' : 'Choose your platform to download the installer without leaving this page.'}</p></div></div>
-    <div className="download-grid">{platforms.map(platform => { const asset = release?.assets.find(a => platform.match.test(a.name)); return <article className="download-card" key={platform.name}><span className="platform-icon">{platform.icon}</span><h2>{platform.name}</h2><p>{platform.note}</p>{asset ? <><span className="download-version">{release?.tag_name} · {(asset.size / 1048576).toFixed(0)} MB</span><a className="button button-primary" href={asset.browser_download_url} download={asset.name} onClick={() => setDownload(platform.name)}><Download size={16} />Download for {platform.name}</a></> : <><span className="download-version">{state === 'loading' ? 'Checking availability' : 'Installer coming soon'}</span><button className="button button-secondary" disabled>{state === 'loading' ? 'Checking…' : 'Preparing installer'}</button></>}</article>; })}</div>
+    <div className="download-grid">{platforms.map(platform => { const asset = release?.assets.find(a => platform.match.test(a.name)); return <article className="download-card" key={platform.name}><span className="platform-icon">{platform.icon}</span><h2>{platform.name}</h2><p>{platform.note}</p>{asset ? <><span className="download-version">{release?.tag_name} · {(asset.size / 1048576).toFixed(0)} MB</span><a className="button button-primary" href={asset.browser_download_url} download={asset.name} onClick={() => setDownload(platform.name)}><Download size={16} />Download for {platform.name}</a></> : <><span className="download-version">{state === 'loading' ? 'Checking availability' : 'Installer coming soon'}</span><button className="button button-secondary" disabled>{state === 'loading' ? 'Checking…' : 'Preparing installer'}</button></>}<a className="text-button install-guide-link" href={`#/download/${platform.id}`}>Installation guide <ArrowRight size={15} /></a></article>; })}</div>
     <div className="download-guidance"><div><ShieldCheck /><h3>Install with confidence.</h3><p>Review release notes, system requirements and signing status before installing. For uninterrupted broadcasts, update after your current stream ends.</p></div><div><CalendarClock /><h3>See what’s new.</h3><p>Read the latest improvements and platform notes here.</p><button className="text-button" onClick={() => go('release-notes')}>Release notes <ArrowRight size={15} /></button></div></div>
   </section>;
 }
+
+const INSTALL_INFO = {
+  mac: { name: 'macOS', note: 'Apple Silicon · M1 and later', match: /aarch64\.dmg$/i },
+  windows: { name: 'Windows', note: '64-bit Intel / AMD PCs · x64', match: /x64.*setup\.exe$/i },
+  linux: { name: 'Linux', note: '64-bit Intel / AMD PCs · x86_64', match: /amd64\.AppImage$/i },
+};
+function InstallPage({ platform }: { platform: InstallPlatform }) {
+  const { release, state } = usePublicRelease();
+  const info = INSTALL_INFO[platform];
+  const asset = release?.assets.find(a => info.match.test(a.name));
+  const alternatives = release?.assets.filter(a => platform === 'windows' ? /\.msi$/i.test(a.name) : platform === 'linux' ? /\.(deb|rpm)$/i.test(a.name) : false) || [];
+  const file = asset?.name;
+  const verify = file ? platform === 'mac' ? `shasum -a 256 ~/Downloads/${file}` : platform === 'windows' ? `Get-FileHash "$env:USERPROFILE\\Downloads\\${file}" -Algorithm SHA256` : `sha256sum ~/Downloads/${file}` : '';
+  return <section className="section subpage install-page">
+    <a className="text-button" href="#/download">All downloads <ArrowRight size={15} /></a>
+    <div className="section-heading"><p className="eyebrow">DOWNLOAD & INSTALL</p><h1>Your studio.<br /><span>For {info.name}.</span></h1><p>{info.note}</p></div>
+    <div className="install-download"><div><strong>{release?.tag_name || 'LiveStream Studio'}</strong><p>{asset ? `${(asset.size / 1048576).toFixed(0)} MB · ${asset.name}` : state === 'loading' ? 'Checking published installers…' : 'Installer information is temporarily unavailable. Please try again.'}</p></div>{asset && <a className="button button-primary" href={asset.browser_download_url} download={asset.name}><Download size={16} />Download for {info.name}</a>}</div>
+    {alternatives.length > 0 && <div className="install-alternatives"><span>Other formats:</span>{alternatives.map(a => <a className="text-button" key={a.name} href={a.browser_download_url} download={a.name}>Download .{a.name.split('.').pop()} <ArrowDown size={14} /></a>)}</div>}
+    <div className="install-sections">
+      <article><p className="eyebrow">01 · INSTALL</p><h2>Make it at home.</h2>{platform === 'mac' ? <ol><li>Open the downloaded .dmg file.</li><li>Drag LiveStream Studio into Applications.</li><li>Open LiveStream Studio from Applications.</li></ol> : platform === 'windows' ? <ol><li>Open the downloaded .exe installer (or the optional .msi package).</li><li>Follow the installer prompts.</li><li>Open LiveStream Studio from the Start menu.</li></ol> : <><p>Choose one format. All packages contain the same app.</p>{file && <><h3>Portable AppImage</h3><Command text={`chmod +x ~/Downloads/${file}\n~/Downloads/${file}`} /></>}{alternatives.map(a => <div key={a.name}><h3>{a.name.endsWith('.deb') ? 'Debian / Ubuntu' : 'Fedora / compatible RPM systems'}</h3><Command text={a.name.endsWith('.deb') ? `sudo apt install ~/Downloads/${a.name}` : `sudo dnf install ~/Downloads/${a.name}`} /></div>)}<p>Linux requires WebKitGTK 4.1. DEB and RPM packages declare their dependencies. If your AppImage reports missing FUSE support, try running it with <code>--appimage-extract-and-run</code>.</p></>}</article>
+      <article><p className="eyebrow">02 · FIRST LAUNCH</p><h2>{platform === 'windows' ? 'About the blue screen.' : platform === 'mac' ? 'When macOS asks.' : 'Ready for your first stream.'}</h2>{platform === 'mac' ? <><p>This release is not notarized by Apple, so macOS may block the first launch.</p><ol><li>Try opening the app once.</li><li>Open <strong>System Settings → Privacy & Security</strong>.</li><li>Find the LiveStream Studio message and choose <strong>Open Anyway</strong>, then confirm.</li></ol><details className="install-troubleshoot"><summary>If macOS says the app “is damaged”</summary><p>First verify your download below and place the app in Applications. For a verified copy downloaded here, run this app-specific command in Terminal, then open the app again:</p><Command text={'xattr -dr com.apple.quarantine "/Applications/LiveStream Studio.app"'} /><p>This removes the quarantine flag only from LiveStream Studio. It does not notarize the app or turn off Gatekeeper for your Mac. If the checksum differs or macOS reports malware, stop and contact support.</p></details></> : platform === 'windows' ? <><p>The installer is not code-signed. Windows may show a blue <strong>“Windows protected your PC”</strong> SmartScreen message.</p><ol><li>Verify the downloaded file using the checksum below.</li><li>In the SmartScreen message, select <strong>More info</strong>.</li><li>Check the app name, then select <strong>Run anyway</strong> to continue with this installer.</li></ol><p>This is a first-launch reputation warning, not a Windows crash. Do not disable Defender or SmartScreen. If Windows reports malware, or your organisation blocks installation, contact support or your administrator.</p></> : <><p>Launch the AppImage directly, or open LiveStream Studio from your applications menu after installing a DEB or RPM.</p><p>Add local videos, create a playlist and enter your destination’s stream key. FFmpeg is included; no separate encoder installation is needed.</p></>}</article>
+      <article><p className="eyebrow">03 · VERIFY YOUR DOWNLOAD</p><h2>Check the file.</h2><p>Run this in {platform === 'windows' ? 'PowerShell' : 'Terminal'} and compare the SHA-256 with the published value. They must match exactly.</p>{verify && <Command text={verify} />}{asset?.digest?.startsWith('sha256:') && <div className="checksum-value"><span>SHA-256 · {asset.name}</span><code>{asset.digest.slice(7)}</code></div>}{release?.assets.find(a => a.name === 'SHA256SUMS.txt') && <a className="text-button" href={release.assets.find(a => a.name === 'SHA256SUMS.txt')!.browser_download_url} download="SHA256SUMS.txt">Download checksums for all packages <ArrowDown size={14} /></a>}<p>A matching checksum confirms that the file matches our published release. Only continue with a copy you downloaded from this website.</p></article>
+    </div>
+    <div className="install-next"><h2>Keep your broadcast running.</h2><p>Update after your current stream ends. Keep the app open and your internet connected while broadcasting or waiting for a schedule.</p><a className="text-button" href="#/support">Need help? <ArrowRight size={15} /></a></div>
+    <nav className="install-platforms" aria-label="Other platforms">{(Object.keys(INSTALL_INFO) as InstallPlatform[]).filter(p => p !== platform).map(p => <a className="button button-secondary" key={p} href={`#/download/${p}`}>Get it for {INSTALL_INFO[p].name} <ArrowRight size={15} /></a>)}</nav>
+  </section>;
+}
+function Command({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
+  async function copy() { try { await navigator.clipboard.writeText(text); setCopied(true); setFailed(false); } catch { setFailed(true); } }
+  useEffect(() => { setCopied(false); setFailed(false); }, [text]);
+  return <div className="install-command"><pre><code>{text}</code></pre><button onClick={copy} aria-label="Copy command">{copied ? 'Copied' : failed ? 'Select and copy' : 'Copy'}</button><span className="sr-only" role="status">{copied ? 'Command copied to clipboard.' : failed ? 'Copy unavailable. Select the command and copy it manually.' : ''}</span></div>;
+}
+
 function ReleaseNotesPage() {
   const { release, state } = usePublicRelease();
   return <section className="section subpage"><div className="section-heading centered"><p className="eyebrow">LIVESTREAM STUDIO BY B2R</p><h1>What’s <span>new.</span></h1><p>{release ? release.tag_name : state === 'loading' ? 'Loading release notes…' : 'Release notes will appear when the next version is published.'}</p></div>{release && <article className="release-notes-body">{release.body}</article>}<div className="centered-action"><button className="button button-primary" onClick={() => go('download')}>Download the app <Download size={16} /></button></div></section>;
